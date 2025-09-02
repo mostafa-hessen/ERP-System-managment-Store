@@ -2,10 +2,10 @@
 -- version 5.2.1
 -- https://www.phpmyadmin.net/
 --
--- Host: 127.0.0.1:3306
--- Generation Time: Jun 04, 2025 at 05:45 PM
--- Server version: 10.11.10-MariaDB
--- PHP Version: 7.2.34
+-- Host: 127.0.0.1
+-- Generation Time: Sep 02, 2025 at 03:10 PM
+-- Server version: 10.4.32-MariaDB
+-- PHP Version: 8.0.30
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -18,7 +18,7 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `u993902228_store`
+-- Database: `saied_db`
 --
 
 -- --------------------------------------------------------
@@ -41,13 +41,9 @@ CREATE TABLE `customers` (
 -- Dumping data for table `customers`
 --
 
--- INSERT INTO `customers` (`id`, `name`, `mobile`, `city`, `address`, `created_by`, `created_at`) VALUES
--- (1, 'حسام محمد', '01006131650', 'القاهرة', '22 بيتشو امريكان المعادى معدل', NULL, '2025-05-29 09:24:27');
--- (2, 'مصطفى محمد', '01234500028', 'الجيزة', 'العنوان الحقيقى هو التالى .....', 4, '2025-05-29 09:55:56'),
--- (3, 'عميل ابن عميل', '01234500027', 'القاهرة', 'رؤء لسيبليلىلاتالتاالب', NULL, '2025-05-29 10:19:10'),
--- (4, 'علاء', '11111111111', 'القاهرة', '22 بيتشو امريكان المعادى', NULL, '2025-05-29 13:06:55'),
--- (5, 'علاء', '22222222221', 'القاهرة', '22 بيتشو امريكان المعادى', NULL, '2025-05-29 13:08:21'),
--- (6, 'علاء', '20202020201', 'القاهرة', '22 بيتشو امريكان المعادى', NULL, '2025-05-29 13:09:33');
+INSERT INTO `customers` (`id`, `name`, `mobile`, `city`, `address`, `created_by`, `created_at`) VALUES
+(7, 'Mostafa Hussien Ramadan', '01157787113', 'Fayoum', 'Sheikh Yusuf ST, Fayoum, Egypt', 5, '2025-09-01 10:26:16'),
+(8, 'ضيف', '12345678901', 'Fayoum', 'Sheikh Yusuf ST, Fayoum, Egypt', 5, '2025-09-01 13:38:46');
 
 -- --------------------------------------------------------
 
@@ -124,7 +120,16 @@ INSERT INTO `invoices_out` (`id`, `customer_id`, `delivered`, `invoice_group`, `
 (5, 5, 'yes', 'group1', NULL, '2025-06-01 07:38:36', NULL, '2025-06-03 12:04:06'),
 (7, 2, 'yes', 'group1', NULL, '2025-06-01 07:41:00', NULL, '2025-06-04 08:22:19'),
 (8, 1, 'no', 'group1', NULL, '2025-06-04 05:50:43', NULL, NULL),
-(9, 3, 'no', 'group1', 3, '2025-06-04 16:24:52', NULL, NULL);
+(9, 3, 'no', 'group1', 3, '2025-06-04 16:24:52', NULL, NULL),
+(10, 7, 'no', 'group1', 5, '2025-09-01 10:26:23', NULL, NULL),
+(11, 7, 'no', 'group1', 5, '2025-09-01 13:32:00', NULL, NULL),
+(12, 7, 'no', 'group1', 5, '2025-09-01 13:36:52', NULL, NULL),
+(13, 7, 'no', 'group1', 5, '2025-09-01 13:37:22', NULL, NULL),
+(14, 8, 'no', 'group1', 5, '2025-09-01 13:40:18', NULL, NULL),
+(15, 7, 'no', 'group1', 5, '2025-09-01 13:43:03', NULL, NULL),
+(16, 8, 'no', 'group1', 5, '2025-09-01 14:11:39', NULL, NULL),
+(17, 8, 'no', 'group1', 5, '2025-09-01 15:01:22', NULL, NULL),
+(18, 7, 'no', 'group1', 5, '2025-09-02 11:27:37', NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -137,37 +142,37 @@ CREATE TABLE `invoice_out_items` (
   `invoice_out_id` int(11) NOT NULL COMMENT 'معرف الفاتورة الصادرة (مفتاح أجنبي لجدول invoices_out)',
   `product_id` int(11) NOT NULL COMMENT 'معرف المنتج (مفتاح أجنبي لجدول products)',
   `quantity` decimal(10,2) NOT NULL COMMENT 'الكمية المباعة من المنتج',
-  `unit_price` decimal(10,2) NOT NULL COMMENT 'سعر الوحدة للمنتج وقت البيع',
   `total_price` decimal(10,2) NOT NULL COMMENT 'السعر الإجمالي للبند (الكمية * سعر الوحدة)',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT 'تاريخ إضافة البند',
-  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp() COMMENT 'تاريخ آخر تعديل للبند'
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp() COMMENT 'تاريخ آخر تعديل للبند',
+  `selling_price` decimal(10,2) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `invoice_out_items`
 --
 
-INSERT INTO `invoice_out_items` (`id`, `invoice_out_id`, `product_id`, `quantity`, `unit_price`, `total_price`, `created_at`, `updated_at`) VALUES
-(1, 7, 1, 2.00, 370.00, 740.00, '2025-06-01 07:59:38', NULL),
-(3, 7, 1, 0.30, 370.00, 111.00, '2025-06-01 08:09:50', NULL),
-(4, 7, 2, 3.50, 185.00, 647.50, '2025-06-01 08:52:24', NULL),
-(6, 5, 2, 1.00, 185.00, 185.00, '2025-06-01 09:06:02', NULL),
-(8, 5, 1, 1.00, 385.00, 385.00, '2025-06-03 11:30:58', NULL),
-(9, 5, 1, 1.00, 385.00, 385.00, '2025-06-03 11:31:46', NULL),
-(10, 5, 1, 1.00, 385.00, 385.00, '2025-06-03 11:32:58', NULL),
-(11, 1, 2, 1.00, 185.00, 185.00, '2025-06-03 11:33:47', NULL),
-(12, 1, 1, 1.00, 350.00, 350.00, '2025-06-03 11:47:20', NULL),
-(13, 1, 1, 1.00, 350.00, 350.00, '2025-06-03 11:47:54', NULL),
-(16, 1, 1, 1.00, 350.00, 350.00, '2025-06-03 11:49:54', NULL),
-(17, 1, 1, 1.00, 320.00, 320.00, '2025-06-03 11:50:44', NULL),
-(18, 1, 2, 1.00, 185.00, 185.00, '2025-06-03 11:53:37', NULL),
-(19, 5, 2, 1.00, 185.00, 185.00, '2025-06-03 11:55:12', NULL),
-(20, 5, 2, 1.00, 185.00, 185.00, '2025-06-03 11:56:06', NULL),
-(21, 5, 2, 1.00, 185.00, 185.00, '2025-06-03 12:01:26', NULL),
-(22, 5, 2, 1.00, 185.00, 185.00, '2025-06-03 12:02:30', NULL),
-(23, 8, 2, 1.00, 185.00, 185.00, '2025-06-04 05:50:53', NULL),
-(24, 9, 2, 2.50, 180.00, 450.00, '2025-06-04 16:25:21', NULL),
-(25, 9, 1, 1.00, 320.00, 320.00, '2025-06-04 16:25:39', NULL);
+INSERT INTO `invoice_out_items` (`id`, `invoice_out_id`, `product_id`, `quantity`, `total_price`, `created_at`, `updated_at`, `selling_price`) VALUES
+(1, 7, 1, 2.00, 740.00, '2025-06-01 07:59:38', NULL, 0.00),
+(3, 7, 1, 0.30, 111.00, '2025-06-01 08:09:50', NULL, 0.00),
+(4, 7, 2, 3.50, 647.50, '2025-06-01 08:52:24', NULL, 0.00),
+(6, 5, 2, 1.00, 185.00, '2025-06-01 09:06:02', NULL, 0.00),
+(8, 5, 1, 1.00, 385.00, '2025-06-03 11:30:58', NULL, 0.00),
+(9, 5, 1, 1.00, 385.00, '2025-06-03 11:31:46', NULL, 0.00),
+(10, 5, 1, 1.00, 385.00, '2025-06-03 11:32:58', NULL, 0.00),
+(11, 1, 2, 1.00, 185.00, '2025-06-03 11:33:47', NULL, 0.00),
+(12, 1, 1, 1.00, 350.00, '2025-06-03 11:47:20', NULL, 0.00),
+(13, 1, 1, 1.00, 350.00, '2025-06-03 11:47:54', NULL, 0.00),
+(16, 1, 1, 1.00, 350.00, '2025-06-03 11:49:54', NULL, 0.00),
+(17, 1, 1, 1.00, 320.00, '2025-06-03 11:50:44', NULL, 0.00),
+(18, 1, 2, 1.00, 185.00, '2025-06-03 11:53:37', NULL, 0.00),
+(19, 5, 2, 1.00, 185.00, '2025-06-03 11:55:12', NULL, 0.00),
+(20, 5, 2, 1.00, 185.00, '2025-06-03 11:56:06', NULL, 0.00),
+(21, 5, 2, 1.00, 185.00, '2025-06-03 12:01:26', NULL, 0.00),
+(22, 5, 2, 1.00, 185.00, '2025-06-03 12:02:30', NULL, 0.00),
+(23, 8, 2, 1.00, 185.00, '2025-06-04 05:50:53', NULL, 0.00),
+(24, 9, 2, 2.50, 450.00, '2025-06-04 16:25:21', NULL, 0.00),
+(25, 9, 1, 1.00, 320.00, '2025-06-04 16:25:39', NULL, 0.00);
 
 -- --------------------------------------------------------
 
@@ -184,16 +189,22 @@ CREATE TABLE `products` (
   `current_stock` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'الرصيد الحالي في المخزن',
   `reorder_level` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'حد إعادة الطلب (التنبيه عند وصول الرصيد إليه أو أقل)',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT 'تاريخ الإنشاء',
-  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp() COMMENT 'تاريخ آخر تعديل'
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp() COMMENT 'تاريخ آخر تعديل',
+  `cost_price` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'سعر شراء القطعه',
+  `selling_price` decimal(10,2) NOT NULL COMMENT 'سعر بيع القطعه'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول المنتجات المخزنة';
 
 --
 -- Dumping data for table `products`
--- --
+--
 
--- INSERT INTO `products` (`id`, `product_code`, `name`, `description`, `unit_of_measure`, `current_stock`, `reorder_level`, `created_at`, `updated_at`) VALUES
--- (1, '1', 'فسيخ سمكتين', '', 'كجم', 14.20, 20.00, '2025-06-01 07:20:56', '2025-06-04 16:25:39'),
--- (2, '2', 'رنجة مبطرخة', '', 'كجم', 89.00, 70.00, '2025-06-01 08:21:34', '2025-06-04 16:27:49');
+INSERT INTO `products` (`id`, `product_code`, `name`, `description`, `unit_of_measure`, `current_stock`, `reorder_level`, `created_at`, `updated_at`, `cost_price`, `selling_price`) VALUES
+(4, '212', 'لبس', '', 'قطعه', 200.00, 50.00, '2025-09-01 14:08:20', '2025-09-02 11:23:34', 0.00, 0.00),
+(5, '11', 'mm', '', 'كجم', 122.00, 0.00, '2025-09-01 14:21:38', '2025-09-01 15:28:25', 0.00, 0.00),
+(6, '1223', 'ggg', '', 'قطعه', 150.00, 50.00, '2025-09-01 15:30:09', '2025-09-01 16:05:30', 0.00, 0.00),
+(778, '231', 'مفصله', '', 'قطعه', 21.00, 0.00, '2025-09-02 07:44:19', '2025-09-02 10:13:21', 100.00, 150.00),
+(779, '101000', 'خنجري', '', 'قطعه', 10.00, 1.00, '2025-09-02 07:45:17', '2025-09-02 07:54:00', 0.00, 0.00),
+(780, '2122', 'سكينه', '', 'قطعه', 17.00, 0.00, '2025-09-02 07:55:41', '2025-09-02 11:40:37', 100.00, 210.00);
 
 -- --------------------------------------------------------
 
@@ -219,8 +230,18 @@ CREATE TABLE `purchase_invoices` (
 -- Dumping data for table `purchase_invoices`
 --
 
--- INSERT INTO `purchase_invoices` (`id`, `supplier_id`, `supplier_invoice_number`, `purchase_date`, `notes`, `total_amount`, `status`, `created_by`, `created_at`, `updated_by`, `updated_at`) VALUES
--- (3, 1, '', '2025-06-01', '', 4110.25, 'fully_received', NULL, '2025-06-01 12:28:42', NULL, '2025-06-03 05:41:35');
+INSERT INTO `purchase_invoices` (`id`, `supplier_id`, `supplier_invoice_number`, `purchase_date`, `notes`, `total_amount`, `status`, `created_by`, `created_at`, `updated_by`, `updated_at`) VALUES
+(4, 2, '', '2025-09-01', '', 0.00, 'fully_received', 5, '2025-09-01 13:48:45', NULL, NULL),
+(5, 2, '', '2025-09-01', '', 0.00, 'partial_received', 5, '2025-09-01 14:22:24', 5, '2025-09-01 14:23:21'),
+(6, 2, '', '2025-09-01', '', 0.00, 'fully_received', 5, '2025-09-01 15:28:09', NULL, NULL),
+(7, 2, '', '2025-09-01', '', 0.00, 'fully_received', 5, '2025-09-01 15:30:55', NULL, NULL),
+(8, 2, '', '2025-09-01', '', 0.00, 'fully_received', 5, '2025-09-01 16:05:08', NULL, NULL),
+(9, 2, '', '2025-09-02', '', 0.00, 'fully_received', 5, '2025-09-02 09:56:44', 5, '2025-09-02 10:12:59'),
+(10, 2, '', '2025-09-02', '', 0.00, 'fully_received', 5, '2025-09-02 10:27:45', NULL, NULL),
+(11, 2, '', '2025-09-02', '', 0.00, 'pending', 5, '2025-09-02 10:40:44', NULL, NULL),
+(12, 2, '', '2025-09-02', '', 50.00, 'fully_received', 5, '2025-09-02 10:42:36', 5, '2025-09-02 11:40:37'),
+(13, 2, '', '2025-09-02', '', 20120.00, 'fully_received', 5, '2025-09-02 10:45:54', 5, '2025-09-02 11:31:22'),
+(14, 2, '', '2025-09-02', '', 10000.00, 'fully_received', 5, '2025-09-02 11:33:40', 5, '2025-09-02 11:35:21');
 
 -- --------------------------------------------------------
 
@@ -243,9 +264,19 @@ CREATE TABLE `purchase_invoice_items` (
 -- Dumping data for table `purchase_invoice_items`
 --
 
--- INSERT INTO `purchase_invoice_items` (`id`, `purchase_invoice_id`, `product_id`, `quantity`, `cost_price_per_unit`, `total_cost`, `created_at`, `updated_at`) VALUES
--- (2, 3, 1, 20.50, 200.50, 4110.25, '2025-06-01 12:32:59', NULL),
--- (4, 3, 2, 100.00, 120.00, 12000.00, '2025-06-03 05:49:03', NULL);
+INSERT INTO `purchase_invoice_items` (`id`, `purchase_invoice_id`, `product_id`, `quantity`, `cost_price_per_unit`, `total_cost`, `created_at`, `updated_at`) VALUES
+(5, 4, 4, 100.00, 10.00, 1000.00, '2025-09-01 14:09:01', NULL),
+(6, 5, 5, 22.00, 10.00, 220.00, '2025-09-01 14:24:54', NULL),
+(7, 6, 5, 100.00, 100.00, 10000.00, '2025-09-01 15:28:25', NULL),
+(8, 8, 6, 100.00, 200.00, 20000.00, '2025-09-01 16:05:30', NULL),
+(11, 9, 778, 21.00, 10.00, 210.00, '2025-09-02 10:13:21', NULL),
+(12, 10, 780, 1.00, 100.00, 100.00, '2025-09-02 10:27:53', NULL),
+(13, 10, 780, 1.00, 100.00, 100.00, '2025-09-02 10:40:03', NULL),
+(15, 13, 4, 1.00, 20.00, 20.00, '2025-09-02 11:23:19', NULL),
+(16, 13, 780, 100.00, 200.00, 20000.00, '2025-09-02 11:24:35', NULL),
+(17, 13, 780, 10.00, 10.00, 100.00, '2025-09-02 11:31:22', NULL),
+(18, 14, 779, 1000.00, 10.00, 10000.00, '2025-09-02 11:33:57', NULL),
+(19, 12, 780, 5.00, 10.00, 50.00, '2025-09-02 11:40:37', NULL);
 
 -- --------------------------------------------------------
 
@@ -264,7 +295,7 @@ CREATE TABLE `settings` (
 --
 
 INSERT INTO `settings` (`setting_name`, `setting_value`, `updated_at`) VALUES
-('user_registration_status', 'open', '2025-06-03 07:23:17');
+('user_registration_status', 'closed', '2025-09-01 13:30:41');
 
 -- --------------------------------------------------------
 
@@ -288,8 +319,8 @@ CREATE TABLE `suppliers` (
 -- Dumping data for table `suppliers`
 --
 
--- INSERT INTO `suppliers` (`id`, `name`, `mobile`, `city`, `address`, `commercial_register`, `created_by`, `created_at`, `updated_at`) VALUES
--- (1, 'محمود', '01006131650', 'القاهرة الكبرى', '24 بيتشو امريكان المعادى', '123123', NULL, '2025-06-01 12:00:59', '2025-06-01 12:04:08');
+INSERT INTO `suppliers` (`id`, `name`, `mobile`, `city`, `address`, `commercial_register`, `created_by`, `created_at`, `updated_at`) VALUES
+(2, 'محمد جمال', '01157787113', 'Fayoum', 'Sheikh Yusuf ST, Fayoum, Egypt', NULL, 5, '2025-09-01 13:48:30', NULL);
 
 -- --------------------------------------------------------
 
@@ -414,7 +445,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `expenses`
@@ -432,7 +463,7 @@ ALTER TABLE `expense_categories`
 -- AUTO_INCREMENT for table `invoices_out`
 --
 ALTER TABLE `invoices_out`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي للفاتورة', AUTO_INCREMENT=10;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي للفاتورة', AUTO_INCREMENT=19;
 
 --
 -- AUTO_INCREMENT for table `invoice_out_items`
@@ -444,25 +475,25 @@ ALTER TABLE `invoice_out_items`
 -- AUTO_INCREMENT for table `products`
 --
 ALTER TABLE `products`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي للمنتج', AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي للمنتج', AUTO_INCREMENT=781;
 
 --
 -- AUTO_INCREMENT for table `purchase_invoices`
 --
 ALTER TABLE `purchase_invoices`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي لفاتورة الشراء', AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي لفاتورة الشراء', AUTO_INCREMENT=15;
 
 --
 -- AUTO_INCREMENT for table `purchase_invoice_items`
 --
 ALTER TABLE `purchase_invoice_items`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي لبند فاتورة الشراء', AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي لبند فاتورة الشراء', AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `suppliers`
 --
 ALTER TABLE `suppliers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي للمورد', AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'المعرف التلقائي للمورد', AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -488,21 +519,6 @@ ALTER TABLE `expenses`
   ADD CONSTRAINT `fk_expense_user_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 --
--- Constraints for table `invoices_out`
---
-ALTER TABLE `invoices_out`
-  ADD CONSTRAINT `fk_invoice_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_invoice_customer` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_invoice_updater` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
---
--- Constraints for table `invoice_out_items`
---
-ALTER TABLE `invoice_out_items`
-  ADD CONSTRAINT `fk_invoice_item_to_invoice` FOREIGN KEY (`invoice_out_id`) REFERENCES `invoices_out` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_invoice_item_to_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE;
-
---
 -- Constraints for table `purchase_invoices`
 --
 ALTER TABLE `purchase_invoices`
@@ -516,12 +532,6 @@ ALTER TABLE `purchase_invoices`
 ALTER TABLE `purchase_invoice_items`
   ADD CONSTRAINT `fk_purchase_item_to_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_purchase_item_to_purchase_invoice` FOREIGN KEY (`purchase_invoice_id`) REFERENCES `purchase_invoices` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
---
--- Constraints for table `suppliers`
---
-ALTER TABLE `suppliers`
-  ADD CONSTRAINT `fk_supplier_user_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
