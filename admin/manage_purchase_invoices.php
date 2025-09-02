@@ -12,6 +12,13 @@ $grand_total_all_purchases = 0;
 $displayed_invoices_sum = 0;
 $suppliers_list = [];
 
+$status_labels = [
+    'pending' => 'قيد الانتظار',
+    'partial_received' => 'تم الاستلام جزئياً',
+    'fully_received' => 'تم الاستلام بالكامل',
+    'cancelled' => 'ملغاة'
+];
+
 // --- جلب الرسائل من الجلسة ---
 if (isset($_SESSION['message'])) {
     $message = $_SESSION['message'];
@@ -30,7 +37,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_purchase_invoic
         $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
     } else {
         $invoice_id_to_delete = intval($_POST['purchase_invoice_id_to_delete']);
-        // الحذف سيقوم بحذف البنود المرتبطة بسبب ON DELETE CASCADE
         $sql_delete = "DELETE FROM purchase_invoices WHERE id = ?";
         if ($stmt_delete = $conn->prepare($sql_delete)) {
             $stmt_delete->bind_param("i", $invoice_id_to_delete);
@@ -44,7 +50,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_purchase_invoic
             $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف: " . $conn->error . "</div>";
         }
     }
-    // PRG - إعادة تحميل الصفحة مع الحفاظ على الفلاتر
     $query_params = [];
     if (!empty($_POST['supplier_filter_val'])) $query_params['supplier_filter_val'] = $_POST['supplier_filter_val'];
     if (!empty($_POST['status_filter_val'])) $query_params['status_filter_val'] = $_POST['status_filter_val'];
@@ -52,12 +57,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_purchase_invoic
     exit;
 }
 
-
 // --- معالجة طلب التصفية ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['filter_purchases'])) {
     $selected_supplier_id = isset($_POST['supplier_filter']) ? intval($_POST['supplier_filter']) : "";
     $selected_status = isset($_POST['status_filter']) ? trim($_POST['status_filter']) : "";
-} elseif ($_SERVER["REQUEST_METHOD"] == "GET") { // للحفاظ على الفلاتر عند العودة أو إعادة التحميل
+} elseif ($_SERVER["REQUEST_METHOD"] == "GET") {
     $selected_supplier_id = isset($_GET['supplier_filter_val']) ? intval($_GET['supplier_filter_val']) : "";
     $selected_status = isset($_GET['status_filter_val']) ? trim($_GET['status_filter_val']) : "";
 }
@@ -71,7 +75,7 @@ if ($result_s) {
     }
 }
 
-// --- جلب الإجمالي الكلي لفواتير المشتريات (مثلاً، غير الملغاة) ---
+// --- جلب الإجمالي الكلي لفواتير المشتريات (غير الملغاة) ---
 $sql_grand_total = "SELECT SUM(total_amount) AS grand_total FROM purchase_invoices WHERE status != 'cancelled'";
 $result_grand_total_query = $conn->query($sql_grand_total);
 if ($result_grand_total_query && $result_grand_total_query->num_rows > 0) {
@@ -79,8 +83,7 @@ if ($result_grand_total_query && $result_grand_total_query->num_rows > 0) {
     $grand_total_all_purchases = floatval($row_grand_total['grand_total'] ?? 0);
 }
 
-
-// --- بناء وعرض فواتير المشتريات ---
+// --- بناء استعلام الفواتير مع الفلاتر ---
 $sql_select_invoices = "SELECT pi.id, pi.supplier_invoice_number, pi.purchase_date, pi.status, pi.total_amount, pi.created_at,
                                s.name as supplier_name,
                                u.username as creator_name
@@ -106,7 +109,6 @@ if (!empty($selected_status)) {
 if (!empty($conditions)) {
     $sql_select_invoices .= " WHERE " . implode(" AND ", $conditions);
 }
-
 $sql_select_invoices .= " ORDER BY pi.purchase_date DESC, pi.id DESC";
 
 if ($stmt_select = $conn->prepare($sql_select_invoices)) {
@@ -123,10 +125,41 @@ if ($stmt_select = $conn->prepare($sql_select_invoices)) {
     $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام جلب فواتير المشتريات: " . $conn->error . "</div>";
 }
 
+// --- حساب إجمالي الفواتير المعروضة حالياً مباشرة من قاعدة البيانات ---
+$displayed_invoices_sum = 0;
+$sql_total_displayed = "SELECT SUM(total_amount) AS total_displayed FROM purchase_invoices pi WHERE 1=1";
+$conditions_total = [];
+$params_total = [];
+$types_total = "";
+
+if (!empty($selected_supplier_id)) {
+    $conditions_total[] = "pi.supplier_id = ?";
+    $params_total[] = $selected_supplier_id;
+    $types_total .= "i";
+}
+if (!empty($selected_status)) {
+    $conditions_total[] = "pi.status = ?";
+    $params_total[] = $selected_status;
+    $types_total .= "s";
+}
+if (!empty($conditions_total)) {
+    $sql_total_displayed .= " AND " . implode(" AND ", $conditions_total);
+}
+
+if ($stmt_total = $conn->prepare($sql_total_displayed)) {
+    if (!empty($params_total)) {
+        $stmt_total->bind_param($types_total, ...$params_total);
+    }
+    $stmt_total->execute();
+    $result_total = $stmt_total->get_result();
+    $row_total = $result_total->fetch_assoc();
+    $displayed_invoices_sum = floatval($row_total['total_displayed'] ?? 0);
+    $stmt_total->close();
+}
+
 $view_purchase_invoice_link = BASE_URL . "admin/view_purchase_invoice.php";
 $edit_purchase_invoice_link = BASE_URL . "admin/edit_purchase_invoice.php";
 $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
-
 
 require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/navbar.php';
@@ -160,10 +193,9 @@ require_once BASE_DIR . 'partials/navbar.php';
                     <label for="status_filter" class="form-label">تصفية حسب الحالة:</label>
                     <select name="status_filter" id="status_filter" class="form-select">
                         <option value="">-- كل الحالات --</option>
-                        <option value="pending" <?php echo ($selected_status == 'pending') ? 'selected' : ''; ?>>قيد الانتظار</option>
-                        <option value="partial_received" <?php echo ($selected_status == 'partial_received') ? 'selected' : ''; ?>>تم الاستلام جزئياً</option>
-                        <option value="fully_received" <?php echo ($selected_status == 'fully_received') ? 'selected' : ''; ?>>تم الاستلام بالكامل</option>
-                        <option value="cancelled" <?php echo ($selected_status == 'cancelled') ? 'selected' : ''; ?>>ملغاة</option>
+                        <?php foreach($status_labels as $key => $label): ?>
+                            <option value="<?php echo $key; ?>" <?php echo ($selected_status == $key) ? 'selected' : ''; ?>><?php echo $label; ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -213,18 +245,18 @@ require_once BASE_DIR . 'partials/navbar.php';
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($result_invoices && $result_invoices->num_rows > 0): ?>
-                            <?php while($invoice = $result_invoices->fetch_assoc()): ?>
-                                <?php
+                        <?php
+                        $current_invoice_total_for_row = 0;
+                        if ($result_invoices && $result_invoices->num_rows > 0):
+                            while($invoice = $result_invoices->fetch_assoc()):
                                 $current_invoice_total_for_row = floatval($invoice["total_amount"] ?? 0);
-                                $displayed_invoices_sum += $current_invoice_total_for_row;
-                                ?>
+                        ?>
                                 <tr>
                                     <td><?php echo $invoice["id"]; ?></td>
                                     <td><?php echo htmlspecialchars($invoice["supplier_name"]); ?></td>
                                     <td class="d-none d-md-table-cell"><?php echo htmlspecialchars($invoice["supplier_invoice_number"] ?: '-'); ?></td>
                                     <td><?php echo date('Y-m-d', strtotime($invoice["purchase_date"])); ?></td>
-                                    <td  class="d-none d-md-table-cell"><span class="badge bg-<?php
+                                    <td class="d-none d-md-table-cell"><span class="badge bg-<?php
                                         switch($invoice['status']){
                                             case 'pending': echo 'warning text-dark'; break;
                                             case 'partial_received': echo 'info'; break;
@@ -232,38 +264,25 @@ require_once BASE_DIR . 'partials/navbar.php';
                                             case 'cancelled': echo 'danger'; break;
                                             default: echo 'secondary';
                                         }
-                                    ?>"><?php echo htmlspecialchars($invoice['status']); ?></span></td>
+                                    ?>"><?php echo $status_labels[$invoice['status']] ?? $invoice['status']; ?></span></td>
                                     <td class="text-end fw-bold"><?php echo number_format($current_invoice_total_for_row, 2); ?> ج.م</td>
                                     <td class="d-none d-md-table-cell"><?php echo htmlspecialchars($invoice["creator_name"] ?? 'غير محدد'); ?></td>
                                     <td class="d-none d-md-table-cell"><?php echo date('Y-m-d H:i A', strtotime($invoice["created_at"])); ?></td>
                                     <td class="text-center">
-                                    <a href="<?php echo $view_purchase_invoice_link; ?>?id=<?php echo $invoice["id"]; ?>" class="btn btn-info btn-sm" title="عرض وإدارة البنود">
-                                        <i class="fas fa-eye"></i> <span class="d-none d-md-inline">البنود</span>
-                                    </a>
-                                    <a href="<?php echo $edit_purchase_invoice_link; ?>?id=<?php echo $invoice["id"]; ?>" class="btn btn-warning btn-sm ms-1" title="تعديل بيانات الفاتورة الأساسية">
-                                        <i class="fas fa-edit"></i> <span class="d-none d-md-inline">تعديل</span>
-                                    </a>
-                                    <?php if ($invoice['status'] != 'cancelled'): // مثال: لا تحذف إذا كانت ملغاة ?>
-                                    <form action="<?php echo BASE_URL; ?>admin/delete_purchase_invoice.php" method="post" class="d-inline ms-1">
-                                        <input type="hidden" name="purchase_invoice_id_to_delete" value="<?php echo $invoice["id"]; ?>">
-                                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                        <button type="submit" name="delete_purchase_invoice" class="btn btn-danger btn-sm"
-                                                onclick="return confirm('هل أنت متأكد من حذف فاتورة المشتريات هذه (#<?php echo $invoice["id"]; ?>) وكل بنودها؟ سيتم خصم الكميات من المخزون.');"
-                                                title="حذف فاتورة المشتريات">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </form>
-                                    <?php endif; ?>
+                                        <a href="<?php echo $view_purchase_invoice_link; ?>?id=<?php echo $invoice["id"]; ?>" class="btn btn-info btn-sm" title="عرض وإدارة البنود">
+                                            <i class="fas fa-eye"></i> <span class="d-none d-md-inline">البنود</span>
+                                        </a>
+                                        <a href="<?php echo $edit_purchase_invoice_link; ?>?id=<?php echo $invoice["id"]; ?>" class="btn btn-warning btn-sm ms-1" title="تعديل بيانات الفاتورة الأساسية">
+                                            <i class="fas fa-edit"></i> <span class="d-none d-md-inline">تعديل</span>
+                                        </a>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
-                        <?php else: ?>
+                        <?php
+                            endwhile;
+                        else:
+                        ?>
                             <tr>
-                                <td colspan="9" class="text-center"> لا توجد فواتير مشتريات تطابق معايير البحث الحالية.
-                                    <?php if(empty($selected_supplier_id) && empty($selected_status)): ?>
-                                        <a href="<?php echo BASE_URL; ?>admin/manage_suppliers.php">ابدأ بإنشاء فاتورة جديدة من قائمة الموردين.</a>
-                                    <?php endif; ?>
-                                </td>
+                                <td colspan="9" class="text-center"> لا توجد فواتير مشتريات تطابق معايير البحث الحالية.</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>

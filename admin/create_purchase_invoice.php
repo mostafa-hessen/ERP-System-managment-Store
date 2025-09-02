@@ -30,7 +30,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_purchase_invoice'
         $purchase_date = trim($_POST['purchase_date']);
         $notes = trim($_POST['notes']);
         $created_by = $_SESSION['id'];
-        $status = 'fully_received'; // الحالة الافتراضية
+        $status = 'pending'; // الحالة الافتراضية
         $total_amount = 0.00; // الإجمالي الأولي
 
         // التحقق من صحة البيانات
