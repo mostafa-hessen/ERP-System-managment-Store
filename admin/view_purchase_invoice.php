@@ -13,27 +13,36 @@ $purchase_invoice_items = [];
 $products_list = [];
 $invoice_total_calculated = 0;
 
+// --- مصفوفة ترجمة حالة الفاتورة (تعديل مصطفى لحل مشكلة التعريب) ---
+$status_labels = [
+    'pending' => 'قيد الانتظار',
+    'partial_received' => 'تم الاستلام جزئياً',
+    'fully_received' => 'تم الاستلام بالكامل',
+    'cancelled' => 'ملغاة'
+];
+
 if (isset($_SESSION['message'])) {
     $message = $_SESSION['message'];
     unset($_SESSION['message']);
 }
 
+// إنشاء CSRF token إذا لم يكن موجود
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
 
+// التحقق من وجود ID صحيح في الرابط
 if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $invoice_id = intval($_GET['id']);
 } else {
     $_SESSION['message'] = "<div class='alert alert-danger'>رقم فاتورة المشتريات غير محدد أو غير صالح.</div>";
-    header("Location: " . BASE_URL . "admin/manage_suppliers.php"); // أو صفحة إدارة فواتير المشتريات
+    header("Location: " . BASE_URL . "admin/manage_suppliers.php");
     exit;
 }
 
 // --- معالجة إضافة بند جديد لفاتورة المشتريات ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_purchase_item'])) {
-    // سيتم التحقق من صلاحية التعديل على الفاتورة (مثل حالتها) قبل الإدراج
     $sql_check_invoice_status_for_add = "SELECT status FROM purchase_invoices WHERE id = ?";
     $stmt_check_status_add = $conn->prepare($sql_check_invoice_status_for_add);
     $stmt_check_status_add->bind_param("i", $invoice_id);
@@ -43,44 +52,64 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_purchase_item'])) 
     $stmt_check_status_add->close();
 
     if (!$invoice_status_data_add || $invoice_status_data_add['status'] == 'cancelled') {
-         $_SESSION['message'] = "<div class='alert alert-warning'>لا يمكن إضافة بنود لهذه الفاتورة لأنها ملغاة أو غير موجودة.</div>";
-    }
-    elseif (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $_SESSION['message'] = "<div class='alert alert-warning'>لا يمكن إضافة بنود لهذه الفاتورة لأنها ملغاة أو غير موجودة.</div>";
+    } elseif (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
         $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
     } else {
         $product_id_to_add = intval($_POST['product_id']);
         $quantity_received = floatval($_POST['quantity']);
         $cost_price_to_add = floatval($_POST['cost_price_per_unit']);
 
-        if ($product_id_to_add <= 0) { $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء اختيار منتج صحيح.</div>"; }
-        elseif ($quantity_received <= 0) { $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء إدخال كمية صحيحة (أكبر من صفر).</div>"; }
-        elseif ($cost_price_to_add < 0) { $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء إدخال سعر تكلفة صحيح.</div>"; }
-        else {
+        // تعديل مصطفى: التحقق من السعر والكمية > 0 قبل الإضافة
+        if ($product_id_to_add <= 0) {
+            $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء اختيار منتج صحيح.</div>";
+        } elseif ($quantity_received <= 0) {
+            $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء إدخال كمية صحيحة أكبر من صفر.</div>";
+        } elseif ($cost_price_to_add <= 0) {
+            $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء إدخال سعر تكلفة أكبر من صفر.</div>";
+        } else {
             $conn->begin_transaction();
             try {
+                $total_cost_for_item = $quantity_received * $cost_price_to_add;
                 $sql_insert_item = "INSERT INTO purchase_invoice_items
                                     (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost)
                                     VALUES (?, ?, ?, ?, ?)";
                 $stmt_insert_item = $conn->prepare($sql_insert_item);
-                $total_cost_for_item = $quantity_received * $cost_price_to_add;
                 $stmt_insert_item->bind_param("iiddd", $invoice_id, $product_id_to_add, $quantity_received, $cost_price_to_add, $total_cost_for_item);
+                $stmt_insert_item->execute();
+                $stmt_insert_item->close();
 
-                if ($stmt_insert_item->execute()) {
+                // --- تعديل مصطفى: تحديث المخزون فقط إذا الفاتورة fully_received ---
+                if ($invoice_status_data_add['status'] === 'fully_received') {
                     $sql_update_stock = "UPDATE products SET current_stock = current_stock + ? WHERE id = ?";
                     $stmt_update_stock = $conn->prepare($sql_update_stock);
                     $stmt_update_stock->bind_param("di", $quantity_received, $product_id_to_add);
                     $stmt_update_stock->execute();
                     $stmt_update_stock->close();
-                    $conn->commit();
-                    $_SESSION['message'] = "<div class='alert alert-success'>تم إضافة البند وتحديث المخزون بنجاح.</div>";
-                } else {
-                    $conn->rollback();
-                    $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء إضافة البند: " . $stmt_insert_item->error . "</div>";
                 }
-                $stmt_insert_item->close();
+
+                // --- تعديل مصطفى: تحديث إجمالي الفاتورة ---
+                // نحسب إجمالي الفاتورة بعد إضافة البند
+                $sql_sum_total = "SELECT SUM(total_cost) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?";
+                $stmt_sum = $conn->prepare($sql_sum_total);
+                $stmt_sum->bind_param("i", $invoice_id);
+                $stmt_sum->execute();
+                $result_sum = $stmt_sum->get_result();
+                $row_sum = $result_sum->fetch_assoc();
+                $invoice_total_calculated = floatval($row_sum['grand_total']);
+                $stmt_sum->close();
+
+                $sql_update_invoice_total = "UPDATE purchase_invoices SET total_amount = ? WHERE id = ?";
+                $stmt_update_invoice_total = $conn->prepare($sql_update_invoice_total);
+                $stmt_update_invoice_total->bind_param("di", $invoice_total_calculated, $invoice_id);
+                $stmt_update_invoice_total->execute();
+                $stmt_update_invoice_total->close();
+
+                $conn->commit();
+                $_SESSION['message'] = "<div class='alert alert-success'>تم إضافة البند بنجاح.</div>";
             } catch (mysqli_sql_exception $exception) {
                 $conn->rollback();
-                $_SESSION['message'] = "<div class='alert alert-danger'>فشلت العملية بسبب خطأ: " . $exception->getMessage() . "</div>";
+                $_SESSION['message'] = "<div class='alert alert-danger'>فشلت العملية: " . $exception->getMessage() . "</div>";
             }
         }
     }
@@ -88,46 +117,42 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_purchase_item'])) 
     exit;
 }
 
-
-// --- جلب بيانات رأس فاتورة المشتريات والمورد ---
+// --- جلب بيانات رأس الفاتورة ---
 $sql_invoice_header = "SELECT pi.*, s.name as supplier_name, u.username as creator_name
                        FROM purchase_invoices pi
                        JOIN suppliers s ON pi.supplier_id = s.id
                        LEFT JOIN users u ON pi.created_by = u.id
                        WHERE pi.id = ?";
-if ($stmt_header = $conn->prepare($sql_invoice_header)) {
-    $stmt_header->bind_param("i", $invoice_id);
-    if ($stmt_header->execute()) {
-        $result_header = $stmt_header->get_result();
-        if ($result_header->num_rows === 1) {
-            $purchase_invoice_data = $result_header->fetch_assoc();
-        } else {
-            if (empty($message)) $message = "<div class='alert alert-danger'>لم يتم العثور على فاتورة المشتريات (رقم: {$invoice_id}).</div>";
-            $purchase_invoice_data = null;
-        }
-    } else { $message = "<div class='alert alert-danger'>خطأ في تنفيذ استعلام رأس الفاتورة.</div>"; }
-    $stmt_header->close();
-} else { $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام رأس الفاتورة.</div>"; }
+$stmt_header = $conn->prepare($sql_invoice_header);
+$stmt_header->bind_param("i", $invoice_id);
+$stmt_header->execute();
+$result_header = $stmt_header->get_result();
+if ($result_header->num_rows === 1) {
+    $purchase_invoice_data = $result_header->fetch_assoc();
+} else {
+    if (empty($message)) $message = "<div class='alert alert-danger'>لم يتم العثور على فاتورة المشتريات (رقم: {$invoice_id}).</div>";
+}
+$stmt_header->close();
 
-
+// --- جلب بنود الفاتورة ---
 if ($purchase_invoice_data) {
     $sql_items = "SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost,
                          p.product_code, p.name as product_name, p.unit_of_measure
                   FROM purchase_invoice_items p_item
                   JOIN products p ON p_item.product_id = p.id
                   WHERE p_item.purchase_invoice_id = ?
-                  ORDER BY p_item.id ASC"; // تم تغيير item.id إلى p_item.id لتجنب الالتباس
-    if ($stmt_items = $conn->prepare($sql_items)) {
-        $stmt_items->bind_param("i", $invoice_id);
-        $stmt_items->execute();
-        $result_items = $stmt_items->get_result();
-        while ($row_item = $result_items->fetch_assoc()) {
-            $purchase_invoice_items[] = $row_item;
-            $invoice_total_calculated += floatval($row_item['total_cost']);
-        }
-        $stmt_items->close();
-    } else { $message .= "<div class='alert alert-warning'>خطأ في جلب بنود فاتورة المشتريات: " . $conn->error . "</div>"; }
+                  ORDER BY p_item.id ASC";
+    $stmt_items = $conn->prepare($sql_items);
+    $stmt_items->bind_param("i", $invoice_id);
+    $stmt_items->execute();
+    $result_items = $stmt_items->get_result();
+    while ($row_item = $result_items->fetch_assoc()) {
+        $purchase_invoice_items[] = $row_item;
+        $invoice_total_calculated += floatval($row_item['total_cost']);
+    }
+    $stmt_items->close();
 
+    // --- جلب قائمة المنتجات ---
     $sql_products = "SELECT id, product_code, name, unit_of_measure FROM products ORDER BY name ASC";
     $result_products_query = $conn->query($sql_products);
     if ($result_products_query) {
@@ -140,10 +165,6 @@ if ($purchase_invoice_data) {
 $edit_purchase_invoice_header_link = BASE_URL . "admin/edit_purchase_invoice.php?id=" . $invoice_id;
 $manage_suppliers_link = BASE_URL . "admin/manage_suppliers.php";
 $delete_purchase_item_link = BASE_URL . "admin/delete_purchase_item.php";
-
-
-require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
 ?>
 
 <div class="container mt-5 pt-3">
@@ -172,7 +193,7 @@ require_once BASE_DIR . 'partials/navbar.php';
                                     case 'cancelled': echo 'danger'; break;
                                     default: echo 'secondary';
                                 }
-                            ?>"><?php echo htmlspecialchars($purchase_invoice_data['status']); ?></span></li>
+                            ?>"><?php echo $status_labels[$purchase_invoice_data['status']]; ?></span></li>
                             <li><strong>ملاحظات:</strong> <?php echo nl2br(htmlspecialchars($purchase_invoice_data['notes'] ?: '-')); ?></li>
                         </ul>
                     </div>
@@ -181,13 +202,14 @@ require_once BASE_DIR . 'partials/navbar.php';
                         <ul class="list-unstyled">
                             <li><strong>الاسم:</strong> <?php echo htmlspecialchars($purchase_invoice_data['supplier_name']); ?></li>
                             <li><strong>أنشئت بواسطة:</strong> <?php echo htmlspecialchars($purchase_invoice_data['creator_name'] ?? 'غير معروف'); ?></li>
-                            <li><strong>تاريخ الإنشاء (فاتورة الشراء):</strong> <?php echo date('Y-m-d H:i A', strtotime($purchase_invoice_data['created_at'])); ?></li>
+                            <li><strong>تاريخ الإنشاء:</strong> <?php echo date('Y-m-d H:i A', strtotime($purchase_invoice_data['created_at'])); ?></li>
                         </ul>
                     </div>
                 </div>
             </div>
         </div>
 
+        <!-- جدول البنود -->
         <div class="card shadow-lg mb-4">
             <div class="card-header bg-light"><h4><i class="fas fa-boxes"></i> بنود فاتورة المشتريات</h4></div>
             <div class="card-body p-0">
@@ -202,7 +224,7 @@ require_once BASE_DIR . 'partials/navbar.php';
                                     <th class="text-center">الكمية المستلمة</th>
                                     <th class="text-end">سعر التكلفة للوحدة</th>
                                     <th class="text-end">إجمالي التكلفة</th>
-                                    <?php if (isset($purchase_invoice_data['status']) && $purchase_invoice_data['status'] != 'cancelled'): // <<< شرط جديد هنا ?>
+                                    <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
                                     <th class="text-center">إجراء</th>
                                     <?php endif; ?>
                                 </tr>
@@ -217,11 +239,11 @@ require_once BASE_DIR . 'partials/navbar.php';
                                         <td class="text-center"><?php echo number_format(floatval($item['quantity']), 2); ?></td>
                                         <td class="text-end"><?php echo number_format(floatval($item['cost_price_per_unit']), 2); ?> ج.م</td>
                                         <td class="text-end fw-bold"><?php echo number_format(floatval($item['total_cost']), 2); ?> ج.م</td>
-                                        <?php if (isset($purchase_invoice_data['status']) && $purchase_invoice_data['status'] != 'cancelled'): // <<< شرط جديد هنا ?>
+                                        <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
                                         <td class="text-center">
-                                            <form action="<?php echo $delete_purchase_item_link; ?>" method="post" class="d-inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا البند؟ سيتم خصم الكمية من المخزون.');">
+                                            <form action="<?php echo $delete_purchase_item_link; ?>" method="post" class="d-inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا البند؟');">
                                                 <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                <input type="hidden" name="item_id_to_delete" value="<?php echo $item['item_id_pk']; // استخدم item_id_pk هنا ?>">
+                                                <input type="hidden" name="item_id_to_delete" value="<?php echo $item['item_id_pk']; ?>">
                                                 <input type="hidden" name="purchase_invoice_id" value="<?php echo $invoice_id; ?>">
                                                 <input type="hidden" name="product_id_to_adjust" value="<?php echo $item['product_id']; ?>">
                                                 <input type="hidden" name="quantity_to_adjust" value="<?php echo floatval($item['quantity']); ?>">
@@ -234,11 +256,11 @@ require_once BASE_DIR . 'partials/navbar.php';
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
-                             <tfoot>
+                            <tfoot>
                                 <tr class="table-light">
-                                    <td colspan="<?php echo (isset($purchase_invoice_data['status']) && $purchase_invoice_data['status'] != 'cancelled') ? '6' : '6'; // <<< شرط جديد هنا ?>" class="text-end fw-bold fs-5">الإجمالي الكلي للفاتورة:</td>
+                                    <td colspan="<?php echo ($purchase_invoice_data['status'] != 'cancelled') ? '6' : '6'; ?>" class="text-end fw-bold fs-5">الإجمالي الكلي للفاتورة:</td>
                                     <td class="text-end fw-bold fs-5"><?php echo number_format(floatval($invoice_total_calculated), 2); ?> ج.م</td>
-                                    <?php if (isset($purchase_invoice_data['status']) && $purchase_invoice_data['status'] != 'cancelled'): // <<< شرط جديد هنا ?>
+                                    <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
                                     <td></td>
                                     <?php endif; ?>
                                 </tr>
@@ -251,7 +273,8 @@ require_once BASE_DIR . 'partials/navbar.php';
             </div>
         </div>
 
-        <?php if (isset($purchase_invoice_data['status']) && $purchase_invoice_data['status'] != 'cancelled'): // <<< شرط جديد هنا ?>
+        <!-- إضافة بند جديد -->
+        <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
         <div class="card shadow-lg mt-4">
             <div class="card-header bg-success text-white">
                 <h4><i class="fas fa-cart-plus"></i> إضافة بند جديد لفاتورة المشتريات</h4>
@@ -264,15 +287,11 @@ require_once BASE_DIR . 'partials/navbar.php';
                             <label for="product_id" class="form-label">اختر المنتج:</label>
                             <select name="product_id" id="product_id" class="form-select" required>
                                 <option value="">-- اختر منتجاً --</option>
-                                <?php if (!empty($products_list)): ?>
-                                    <?php foreach ($products_list as $product): ?>
-                                        <option value="<?php echo $product['id']; ?>">
-                                            <?php echo htmlspecialchars($product['product_code']); ?> - <?php echo htmlspecialchars($product['name']); ?> (<?php echo htmlspecialchars($product['unit_of_measure']); ?>)
-                                        </option>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <option value="" disabled>لا توجد منتجات متاحة للإضافة</option>
-                                <?php endif; ?>
+                                <?php foreach ($products_list as $product): ?>
+                                    <option value="<?php echo $product['id']; ?>">
+                                        <?php echo htmlspecialchars($product['product_code']); ?> - <?php echo htmlspecialchars($product['name']); ?> (<?php echo htmlspecialchars($product['unit_of_measure']); ?>)
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-md-3 mb-3">
@@ -293,7 +312,7 @@ require_once BASE_DIR . 'partials/navbar.php';
         <?php endif; ?>
 
         <div class="card-footer text-muted text-center mt-4">
-             <a href="<?php echo $manage_suppliers_link; ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> العودة لإدارة الموردين</a>
+            <a href="<?php echo $manage_suppliers_link; ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> العودة لإدارة الموردين</a>
         </div>
 
     <?php elseif(empty($message)): ?>
