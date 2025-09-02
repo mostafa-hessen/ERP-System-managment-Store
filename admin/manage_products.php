@@ -54,7 +54,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_product'])) {
 
 
 // --- جلب كل المنتجات ---
-$sql_select_products = "SELECT id, product_code, name, unit_of_measure, current_stock, created_at,reorder_level FROM products ORDER BY id DESC";
+$sql_select_products = "SELECT id, product_code, name, unit_of_measure, current_stock, created_at,reorder_level,cost_price , selling_price FROM products ORDER BY id DESC";
 $result_products = $conn->query($sql_select_products);
 
 
@@ -84,7 +84,7 @@ $result_products = $conn->query($sql_select_products);
                             <th> لرصيد الحالي</th>
                             <th class="text-center">حد اعاده الطلب</th>
                             <th class="d-none d-md-table-cell">تاريخ الإضافة</th>
-                            <th>سعر التكلفة</th>
+                            <th>سعر الشراء</th>
                             <th>سعر البيع</th>
 
                             <th class="text-center">إجراءات</th>
@@ -102,8 +102,8 @@ $result_products = $conn->query($sql_select_products);
                                     <td class="text-center"><?php echo $product["current_stock"]; ?></td>
                                     <td class="text-center"><?php echo $product["reorder_level"]; ?></td>
                                     <td class="d-none d-md-table-cell"><?php echo date('Y-m-d', strtotime($product["created_at"])); ?></td>
-                                    <td>0</td>
-                                    <td>0</td>
+                                    <td><?php echo $product["cost_price"]; ?></td>
+                                    <td><?php echo $product["selling_price"]; ?></td>
                                     <td class="text-center">
                                         <form action="edit_product.php" method="post" class="d-inline">
                                             <input type="hidden" name="product_id_to_edit" value="<?php echo $product["id"]; ?>">
