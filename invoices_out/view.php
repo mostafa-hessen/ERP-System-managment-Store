@@ -128,7 +128,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_invoice_item'])) {
                 $_SESSION['message'] = "<div class='alert alert-danger'>الكمية المطلوبة للمنتج \"" . htmlspecialchars($product_stock_data['name']) . "\" غير متوفرة. الرصيد الحالي: " . floatval($product_stock_data['current_stock']) . ".</div>";
             } else {
                 $total_price_for_item = $quantity_to_add * $unit_price_to_add;
-                $sql_insert_item = "INSERT INTO invoice_out_items (invoice_out_id, product_id, quantity, selling_price, total_price) VALUES (?, ?, ?, ?, ?)";
+                $sql_insert_item = "INSERT INTO invoice_out_items (invoice_out_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)";
                 $stmt_insert_item = $conn->prepare($sql_insert_item);
                 // تعديل أنواع bind_param: i, i, d, d, d
                 $stmt_insert_item->bind_param("iiddd", $invoice_id, $product_id_to_add, $quantity_to_add, $unit_price_to_add, $total_price_for_item); // <<< تغيير هنا
@@ -182,7 +182,7 @@ if ($stmt_complete = $conn->prepare($sql_complete_invoice_data)) {
 
 // جلب بنود الفاتورة فقط إذا تم العثور على بيانات الفاتورة الرئيسية
 if ($invoice_data) {
-    $sql_items = "SELECT item.id as item_id, item.product_id, item.quantity, item.selling_price, item.total_price,
+    $sql_items = "SELECT item.id as item_id, item.product_id, item.quantity, item.unit_price, item.total_price,
                          p.product_code, p.name as product_name, p.unit_of_measure
                   FROM invoice_out_items item
                   JOIN products p ON item.product_id = p.id
@@ -202,7 +202,7 @@ if ($invoice_data) {
     }
 
     if ($can_manage_invoice_items) {
-        $sql_products = "SELECT id, product_code, name, current_stock, unit_of_measure ,selling_price FROM products WHERE current_stock > 0 ORDER BY name ASC";
+        $sql_products = "SELECT id, product_code, name, current_stock, unit_of_measure FROM products WHERE current_stock > 0 ORDER BY name ASC";
         $result_products_query = $conn->query($sql_products); // استخدام متغير مختلف لتجنب التعارض
         if ($result_products_query) {
             while ($row_prod = $result_products_query->fetch_assoc()) {
@@ -389,7 +389,74 @@ $delete_item_link = BASE_URL . "invoices_out/delete_invoice_item.php";
             </div>
         </div>
 
-       
+        <?php if ($can_manage_invoice_items && $invoice_data['delivered'] == 'no'): ?>
+        <div class="card shadow-lg mt-4">
+            <div class="card-header bg-success text-white">
+                <h4><i class="fas fa-cart-plus"></i> إضافة منتج جديد للفاتورة</h4>
+            </div>
+            <div class="card-body p-4">
+                <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>?id=<?php echo $invoice_id; ?>" method="post">
+                    <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                    <div class="row">
+                        <div class="col-md-5 mb-3">
+                            <label for="product_id" class="form-label">اختر المنتج:</label>
+                            <select name="product_id" id="product_id" class="form-select" required onchange="updateUnitPriceAndStock(this)">
+                                <option value="">-- اختر منتجاً --</option>
+                                <?php if (!empty($products_list)): ?>
+                                    <?php foreach ($products_list as $product): ?>
+                                        <option value="<?php echo $product['id']; ?>" data-stock="<?php echo floatval($product['current_stock']); // <-- تعديل لـ floatval ?>" data-unit="<?php echo htmlspecialchars($product['unit_of_measure']); ?>">
+                                            <?php echo htmlspecialchars($product['product_code']); ?> - <?php echo htmlspecialchars($product['name']); ?> (الرصيد: <?php echo floatval($product['current_stock']); // <-- تعديل لـ floatval ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <option value="" disabled>لا توجد منتجات متاحة للإضافة (أو رصيدها صفر)</option>
+                                <?php endif; ?>
+                            </select>
+
+                            
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <label for="quantity" class="form-label">الكمية:</label>
+                            <input type="number" name="quantity" id="quantity" class="form-control" step="0.01" min="0.01" value="1.00" required>
+                            <small id="unit_display" class="form-text text-muted"></small>
+                            <small id="stock_warning" class="form-text text-danger d-none">الكمية المطلوبة أكبر من الرصيد المتاح!</small>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="unit_price" class="form-label">سعر الوحدة:</label>
+                            <input type="number" name="unit_price" id="unit_price" class="form-control" step="0.01" min="0" value="0.00" required>
+                        </div>
+                        <div class="col-md-2 mb-3 d-flex align-items-end">
+                            <button type="submit" name="add_invoice_item" id="add_item_btn" class="btn btn-success w-100"><i class="fas fa-plus"></i> إضافة</button>
+                        </div>
+                    </div>
+
+                    <!-- <input type="hidden" name="product_id" id="product_id" required>
+<div class="mb-3 position-relative">
+  <label for="product_search" class="form-label">ابحث عن المنتج (بالكود أو الاسم):</label>
+  <input type="text" id="product_search" class="form-control" placeholder="اكتب للبحث..." autocomplete="off">
+  <div id="search_results" class="list-group position-absolute w-100" style="z-index:1000;"></div>
+</div> -->
+<!-- 
+<div class="row">
+  <div class="col-md-2 mb-3">
+    <label for="quantity" class="form-label">الكمية:</label>
+    <input type="number" name="quantity" id="quantity" class="form-control" step="0.01" min="0.01" value="1.00" required>
+    <small id="unit_display" class="form-text text-muted"></small>
+    <small id="stock_warning" class="form-text text-danger d-none"></small>
+  </div>
+  <div class="col-md-3 mb-3">
+    <label for="unit_price" class="form-label">سعر الوحدة:</label>
+    <input type="number" name="unit_price" id="unit_price" class="form-control" step="0.01" min="0" value="0.00" required>
+  </div>
+  <div class="col-md-2 mb-3 d-flex align-items-end">
+    <button type="submit" name="add_invoice_item" id="add_item_btn" class="btn btn-success w-100"><i class="fas fa-plus"></i> إضافة</button>
+  </div>
+</div> -->
+
+                </form>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <div class="card-footer text-muted text-center mt-4">
             <a href="<?php echo BASE_URL . (isset($_SESSION['role']) && $_SESSION['role'] == 'admin' ? 'admin/pending_invoices.php' : 'show_customer.php'); ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> العودة للقائمة</a>
@@ -403,18 +470,17 @@ $delete_item_link = BASE_URL . "invoices_out/delete_invoice_item.php";
 
 </div>
 <script>
-  function updateUnitPriceAndStock(selectElement) {
+function updateUnitPriceAndStock(selectElement) {
     const selectedOption = selectElement.options[selectElement.selectedIndex];
     const stock = parseFloat(selectedOption.getAttribute('data-stock'));
     const unit = selectedOption.getAttribute('data-unit');
-    const price = parseFloat(selectedOption.getAttribute('data-price')); // 👈 سعر البيع
-
     const quantityInput = document.getElementById('quantity');
+    const unitPriceInput = document.getElementById('unit_price'); // <-- حقل السعر
     const stockWarning = document.getElementById('stock_warning');
     const addItemBtn = document.getElementById('add_item_btn');
     const unitPriceInput = document.getElementById('unit_price'); // 👈 الحقل بتاع سعر الوحدة
 
-    quantityInput.max = stock.toFixed(2);
+    quantityInput.max = stock.toFixed(2); // تحديد الحد الأقصى للكمية مع كسور
     document.getElementById('unit_display').textContent = 'وحدة القياس: ' + (unit || '');
 
     // تعيين السعر مباشرة
@@ -442,9 +508,13 @@ $delete_item_link = BASE_URL . "invoices_out/delete_invoice_item.php";
             stockWarning.classList.add('d-none');
             addItemBtn.disabled = false;
         }
+    };
+    // استدعاء oninput يدوياً للتحقق من القيمة الأولية للكمية إذا كانت 1 والرصيد 0
+    if (quantityInput.value) {
+      const event = new Event('input', { bubbles: true });
+      quantityInput.dispatchEvent(event);
     }
 }
-
 
 
     // <script> اول كود البحث

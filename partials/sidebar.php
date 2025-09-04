@@ -51,14 +51,14 @@ $current_page = basename($_SERVER['PHP_SELF']);
         </button> -->
     </div>
     <ul class="nav flex-column mt-4">
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'welcome.php') ? 'active' : ''; ?>" href="../user/welcome.php"><i class="fas fa-tachometer-alt"></i> لوحة التحكم</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_products.php') ? 'active' : ''; ?>" href="../admin/manage_products.php"><i class="fas fa-boxes"></i> المنتجات</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_customer.php') ? 'active' : ''; ?>" href="../admin/manage_customer.php"><i class="fas fa-users"></i> العملاء</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_suppliers.php') ? 'active' : ''; ?>" href="../admin/manage_suppliers.php"><i class="fas fa-people-carry"></i> الموردين</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_purchase_invoices.php') ? 'active' : ''; ?>" href="../admin/manage_purchase_invoices.php"><i class="fas fa-shopping-cart"></i> المشتريات</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_expenses.php') ? 'active' : ''; ?>" href="../admin/manage_expenses.php"><i class="fas fa-file-invoice-dollar"></i> المصروفات</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'gross_profit_report.php') ? 'active' : ''; ?>" href="../admin/gross_profit_report.php"><i class="fas fa-chart-line"></i> التقارير</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>" href="../admin/manage_users.php"><i class="fas fa-cog"></i> الإعدادات</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'welcome.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>user/welcome.php"><i class="fas fa-tachometer-alt"></i> لوحة التحكم</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_products.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_products.php"><i class="fas fa-boxes"></i> المنتجات</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_customer.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_customer.php"><i class="fas fa-users"></i> العملاء</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_suppliers.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_suppliers.php"><i class="fas fa-people-carry"></i> الموردين</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_purchase_invoices.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_purchase_invoices.php"><i class="fas fa-shopping-cart"></i> المشتريات</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_expenses.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_expenses.php"><i class="fas fa-file-invoice-dollar"></i> المصروفات</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'gross_profit_report.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/gross_profit_report.php"><i class="fas fa-chart-line"></i> التقارير</a></li>
+        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_users.php"><i class="fas fa-cog"></i> الإعدادات</a></li>
     </ul>
 </div>
 

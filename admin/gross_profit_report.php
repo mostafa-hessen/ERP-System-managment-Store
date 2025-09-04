@@ -52,65 +52,23 @@ if (!empty($start_date_filter) && !empty($end_date_filter)) {
 
         // 2. حساب إجمالي تكلفة البضاعة المباعة (COGS)
         // سنستخدم استعلاماً فرعياً لجلب آخر سعر شراء لكل منتج تم بيعه
-        // $sql_cogs = "SELECT SUM(sold_items.quantity * COALESCE(last_costs.cost_price_per_unit, 0)) AS total_cogs
-        //              FROM (
-        //                  SELECT ioi.product_id, ioi.quantity
-        //                  FROM invoice_out_items ioi
-        //                  JOIN invoices_out io ON ioi.invoice_out_id = io.id
-        //                  WHERE io.delivered = 'yes' AND io.created_at BETWEEN ? AND ?
-        //              ) AS sold_items
-        //              LEFT JOIN (
-        //                  SELECT pii.product_id, pii.cost_price_per_unit
-        //                  FROM purchase_invoice_items pii
-        //                  INNER JOIN (
-        //                      SELECT product_id, MAX(id) as max_pii_id
-        //                      FROM purchase_invoice_items
-        //                      GROUP BY product_id
-        //                  ) latest_pii ON pii.id = latest_pii.max_pii_id
-        //              ) AS last_costs ON sold_items.product_id = last_costs.product_id";
+        $sql_cogs = "SELECT SUM(sold_items.quantity * COALESCE(last_costs.cost_price_per_unit, 0)) AS total_cogs
+                     FROM (
+                         SELECT ioi.product_id, ioi.quantity
+                         FROM invoice_out_items ioi
+                         JOIN invoices_out io ON ioi.invoice_out_id = io.id
+                         WHERE io.delivered = 'yes' AND io.created_at BETWEEN ? AND ?
+                     ) AS sold_items
+                     LEFT JOIN (
+                         SELECT pii.product_id, pii.cost_price_per_unit
+                         FROM purchase_invoice_items pii
+                         INNER JOIN (
+                             SELECT product_id, MAX(id) as max_pii_id
+                             FROM purchase_invoice_items
+                             GROUP BY product_id
+                         ) latest_pii ON pii.id = latest_pii.max_pii_id
+                     ) AS last_costs ON sold_items.product_id = last_costs.product_id";
 
-
-        // تعديل مصطفي لحل مشكله اذا كان سعر الشراء متحدد في المخزن ولم نورد يقدر يستخدمه 
-        // $sql_cogs = "SELECT 
-        //     --     SUM(sold_items.quantity * COALESCE(last_costs.cost_price_per_unit, p.cost_price, 0)) AS total_cogs
-        //     -- FROM (
-            //     --     SELECT ioi.product_id, ioi.quantity
-            //     --     FROM invoice_out_items ioi
-            //     --     JOIN invoices_out io ON ioi.invoice_out_id = io.id
-            //     --     WHERE io.delivered = 'yes' 
-            //     --     AND io.created_at BETWEEN ? AND ?
-            //     -- ) AS sold_items
-            //     -- LEFT JOIN (
-                //     --     SELECT pii.product_id, pii.cost_price_per_unit
-                //     --     FROM purchase_invoice_items pii
-        //     --     INNER JOIN (
-            //     --         SELECT product_id, MAX(id) as max_pii_id
-            //     --         FROM purchase_invoice_items
-            //     --         GROUP BY product_id
-            //     --     ) latest_pii ON pii.id = latest_pii.max_pii_id
-            //     -- ) AS last_costs ON sold_items.product_id = last_costs.product_id
-            //     -- LEFT JOIN products p ON sold_items.product_id = p.id;
-            //     -- ";
-            
-            // تعديل مصطفي لحل مشكله اذا كان سعر الشراء متحدد في المخزن ولم نورد يقدر يستخدمه ولكن 
-            // ولكن لحل مشكله تاثير وقت البيع اثرت علي الربح كامل 
-            $sql_cogs = "
-    SELECT SUM(ioi.quantity * COALESCE(pii.cost_price_per_unit, p.cost_price, 0)) AS total_cogs
-    FROM invoice_out_items ioi
-    JOIN invoices_out io ON ioi.invoice_out_id = io.id
-    LEFT JOIN products p ON ioi.product_id = p.id
-    LEFT JOIN purchase_invoice_items pii 
-        ON pii.product_id = ioi.product_id 
-        AND pii.created_at <= io.created_at
-    LEFT JOIN (
-        SELECT product_id, MAX(created_at) AS last_purchase
-        FROM purchase_invoice_items
-        GROUP BY product_id
-    ) latest ON latest.product_id = ioi.product_id AND pii.created_at = latest.last_purchase
-    WHERE io.delivered = 'yes' AND io.created_at BETWEEN ? AND ?
-";
-
-            
         if ($stmt_cogs = $conn->prepare($sql_cogs)) {
             $stmt_cogs->bind_param("ss", $start_date_sql, $end_date_sql);
             if ($stmt_cogs->execute()) {
@@ -118,13 +76,9 @@ if (!empty($start_date_filter) && !empty($end_date_filter)) {
                 if ($row_cogs = $result_cogs->fetch_assoc()) {
                     $total_cogs = floatval($row_cogs['total_cogs'] ?? 0);
                 }
-            } else {
-                $message .= "<div class='alert alert-danger'>خطأ في حساب تكلفة البضاعة المباعة: " . $stmt_cogs->error . "</div>";
-            }
+            } else { $message .= "<div class='alert alert-danger'>خطأ في حساب تكلفة البضاعة المباعة: " . $stmt_cogs->error . "</div>"; }
             $stmt_cogs->close();
-        } else {
-            $message .= "<div class='alert alert-danger'>خطأ في تحضير استعلام تكلفة البضاعة المباعة: " . $conn->error . "</div>";
-        }
+        } else { $message .= "<div class='alert alert-danger'>خطأ في تحضير استعلام تكلفة البضاعة المباعة: " . $conn->error . "</div>"; }
 
         // 3. حساب إجمالي الربح
         $gross_profit = $total_revenue - $total_cogs;
