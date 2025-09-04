@@ -4,7 +4,6 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 
@@ -56,6 +55,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_product'])) {
 // --- جلب كل المنتجات ---
 $sql_select_products = "SELECT id, product_code, name, unit_of_measure, current_stock, created_at,reorder_level,cost_price , selling_price FROM products ORDER BY id DESC";
 $result_products = $conn->query($sql_select_products);
+require_once BASE_DIR . 'partials/sidebar.php';
 
 
 ?>
