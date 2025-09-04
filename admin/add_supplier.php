@@ -3,6 +3,8 @@ $page_title = "إضافة مورد جديد";
 $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
+require_once BASE_DIR . 'partials/sidebar.php';
+
 
 // تعريف المتغيرات
 $name = $mobile = $city = $address = $commercial_register = "";
@@ -109,7 +111,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_supplier'])) {
 }
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

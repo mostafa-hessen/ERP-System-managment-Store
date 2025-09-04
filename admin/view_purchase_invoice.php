@@ -4,7 +4,7 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 $invoice_id = 0;
@@ -13,7 +13,7 @@ $purchase_invoice_items = [];
 $products_list = [];
 $invoice_total_calculated = 0;
 
-// --- مصفوفة ترجمة حالة الفاتورة (تعديل مصطفى لحل مشكلة التعريب) ---
+// --- مصفوفة ترجمة حالة الفاتورة ---
 $status_labels = [
     'pending' => 'قيد الانتظار',
     'partial_received' => 'تم الاستلام جزئياً',
@@ -32,7 +32,7 @@ if (empty($_SESSION['csrf_token'])) {
 }
 $csrf_token = $_SESSION['csrf_token'];
 
-// التحقق من وجود ID صحيح في الرابط
+// التحقق من وجود ID صحيح
 if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $invoice_id = intval($_GET['id']);
 } else {
@@ -41,7 +41,7 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     exit;
 }
 
-// --- معالجة إضافة بند جديد لفاتورة المشتريات ---
+// --- معالجة إضافة بند جديد ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_purchase_item'])) {
     $sql_check_invoice_status_for_add = "SELECT status FROM purchase_invoices WHERE id = ?";
     $stmt_check_status_add = $conn->prepare($sql_check_invoice_status_for_add);
@@ -60,7 +60,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_purchase_item'])) 
         $quantity_received = floatval($_POST['quantity']);
         $cost_price_to_add = floatval($_POST['cost_price_per_unit']);
 
-        // تعديل مصطفى: التحقق من السعر والكمية > 0 قبل الإضافة
         if ($product_id_to_add <= 0) {
             $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء اختيار منتج صحيح.</div>";
         } elseif ($quantity_received <= 0) {
@@ -79,17 +78,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_purchase_item'])) 
                 $stmt_insert_item->execute();
                 $stmt_insert_item->close();
 
-                // --- تعديل مصطفى: تحديث المخزون فقط إذا الفاتورة fully_received ---
+                // تحديث المخزون فقط إذا fully_received
                 if ($invoice_status_data_add['status'] === 'fully_received') {
                     $sql_update_stock = "UPDATE products SET current_stock = current_stock + ? WHERE id = ?";
                     $stmt_update_stock = $conn->prepare($sql_update_stock);
                     $stmt_update_stock->bind_param("di", $quantity_received, $product_id_to_add);
                     $stmt_update_stock->execute();
                     $stmt_update_stock->close();
+
+                    // ✅ تعديل جديد: تحديث cost_price للمنتج من آخر فاتورة fully_received
+                    $sql_update_cost = "UPDATE products SET cost_price = ? WHERE id = ?";
+                    $stmt_update_cost = $conn->prepare($sql_update_cost);
+                    $stmt_update_cost->bind_param("di", $cost_price_to_add, $product_id_to_add);
+                    $stmt_update_cost->execute();
+                    $stmt_update_cost->close();
                 }
 
-                // --- تعديل مصطفى: تحديث إجمالي الفاتورة ---
-                // نحسب إجمالي الفاتورة بعد إضافة البند
+                // تحديث إجمالي الفاتورة
                 $sql_sum_total = "SELECT SUM(total_cost) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?";
                 $stmt_sum = $conn->prepare($sql_sum_total);
                 $stmt_sum->bind_param("i", $invoice_id);
@@ -117,7 +122,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_purchase_item'])) 
     exit;
 }
 
-// --- جلب بيانات رأس الفاتورة ---
+// --- جلب بيانات الفاتورة ---
 $sql_invoice_header = "SELECT pi.*, s.name as supplier_name, u.username as creator_name
                        FROM purchase_invoices pi
                        JOIN suppliers s ON pi.supplier_id = s.id
@@ -134,7 +139,7 @@ if ($result_header->num_rows === 1) {
 }
 $stmt_header->close();
 
-// --- جلب بنود الفاتورة ---
+// --- جلب البنود ---
 if ($purchase_invoice_data) {
     $sql_items = "SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost,
                          p.product_code, p.name as product_name, p.unit_of_measure
@@ -166,6 +171,10 @@ $edit_purchase_invoice_header_link = BASE_URL . "admin/edit_purchase_invoice.php
 $manage_suppliers_link = BASE_URL . "admin/manage_suppliers.php";
 $delete_purchase_item_link = BASE_URL . "admin/delete_purchase_item.php";
 ?>
+
+
+
+
 
 <div class="container mt-5 pt-3">
     <?php echo $message; ?>

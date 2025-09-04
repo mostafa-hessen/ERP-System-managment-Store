@@ -110,7 +110,7 @@ $total_low_stock_items = ($result_low_stock_count && $result_low_stock_count->nu
 
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

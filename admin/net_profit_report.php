@@ -3,6 +3,7 @@ $page_title = "تقرير صافي الربح";
 // $class_reports_active = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
+require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 $report_data = []; // لتخزين بيانات التقرير التفصيلية إذا أردنا

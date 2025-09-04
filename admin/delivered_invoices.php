@@ -5,7 +5,7 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php'; // للوصول لـ config.php من داخل مجلد admin
 require_once BASE_DIR . 'partials/session_admin.php'; // هذه الصفحة للمدير فقط
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 $selected_group = "";
@@ -185,11 +185,14 @@ if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
                                             <form action="<?php echo BASE_URL; ?>admin/delete_sales_invoice.php" method="post" class="d-inline ms-1">
                                                 <input type="hidden" name="invoice_out_id_to_delete" value="<?php echo $row["id"]; ?>">
                                                 <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                <button type="submit" name="delete_sales_invoice" class="btn btn-danger btn-sm"
-                                                        onclick="return confirm('هل أنت متأكد من حذف هذه الفاتورة (#<?php echo $row["id"]; ?>) وكل بنودها؟ سيتم إعادة الكميات للمخزون.');"
-                                                        title="حذف فاتورة المبيعات">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
+                                              <button type="submit" 
+        name="delete_sales_invoice" 
+        class="btn btn-danger btn-sm"
+        title="حذف فاتورة المبيعات"
+        onclick="return confirm('هل أنت متأكد من حذف هذه الفاتورة <?php echo $row["id"]; ?>) وكل بنودها؟ سيتم إعادة الكميات للمخزون.');">
+    <i class="fas fa-trash"></i>
+</button>
+
                                             </form>
                                             <?php endif; ?>
                                     </td>

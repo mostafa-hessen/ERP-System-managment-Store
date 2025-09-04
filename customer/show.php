@@ -4,7 +4,6 @@ $class1 = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_user.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
 
 $message = ""; // لرسائل الحالة
 $search_term = ""; // لتخزين مصطلح البحث
@@ -40,7 +39,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['create_invoice_now']))
         $stmt_check->bind_param("i", $customer_id);
         $stmt_check->execute();
         $stmt_check->store_result();
-
+        
         if($stmt_check->num_rows > 0){
             // إدراج الفاتورة في قاعدة البيانات
             $sql_insert = "INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by) VALUES (?, ?, ?, ?)";
@@ -141,6 +140,7 @@ if ($stmt_select = $conn->prepare($sql_select)) {
     $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام الجلب: " . $conn->error . "</div>";
 }
 
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

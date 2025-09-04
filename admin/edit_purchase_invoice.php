@@ -35,62 +35,142 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_purchase_invoic
         $status_posted = trim($_POST['status']);
         $updated_by = $_SESSION['id']; // المدير هو من يقوم بالتحديث
 
+        // --- الحصول على الحالة السابقة من قاعدة البيانات
+        $previous_status = null;
+        $sql_prev = "SELECT status FROM purchase_invoices WHERE id = ? LIMIT 1";
+        if ($stmt_prev = $conn->prepare($sql_prev)) {
+            $stmt_prev->bind_param("i", $invoice_id);
+            $stmt_prev->execute();
+            $res_prev = $stmt_prev->get_result();
+            if ($row_prev = $res_prev->fetch_assoc()) {
+                $previous_status = $row_prev['status'];
+            }
+            $stmt_prev->close();
+        }
+
         // --- التحقق من صحة البيانات ---
         if (empty($purchase_date_posted)) {
             $purchase_date_err = "الرجاء إدخال تاريخ الشراء.";
         }
-        // التحقق من أن الحالة هي واحدة من القيم المسموح بها في ENUM
         $allowed_statuses = ['pending', 'partial_received', 'fully_received', 'cancelled'];
         if (empty($status_posted) || !in_array($status_posted, $allowed_statuses)) {
             $status_err = "الرجاء اختيار حالة فاتورة صالحة.";
         }
-        // يمكنك إضافة المزيد من التحققات هنا (مثل طول رقم فاتورة المورد)
 
         if (empty($purchase_date_err) && empty($status_err)) {
-            $sql_update = "UPDATE purchase_invoices
-                           SET supplier_invoice_number = ?, purchase_date = ?, notes = ?, status = ?, updated_by = ?, updated_at = NOW()
-                           WHERE id = ?";
-            if ($stmt_update = $conn->prepare($sql_update)) {
-                $stmt_update->bind_param("ssssii", $supplier_invoice_number_posted, $purchase_date_posted, $notes_posted, $status_posted, $updated_by, $invoice_id);
-                if ($stmt_update->execute()) {
-                    $_SESSION['message'] = "<div class='alert alert-success'>تم تحديث بيانات فاتورة المشتريات رقم #{$invoice_id} بنجاح.</div>";
-                    header("Location: " . BASE_URL . "admin/view_purchase_invoice.php?id=" . $invoice_id);
-                    exit;
+            // نستخدم معاملة لضمان الاتساق
+            $conn->begin_transaction();
+            try {
+                // تحديث بيانات رأس الفاتورة
+                $sql_update = "UPDATE purchase_invoices
+                               SET supplier_invoice_number = ?, purchase_date = ?, notes = ?, status = ?, updated_by = ?, updated_at = NOW()
+                               WHERE id = ?";
+                if ($stmt_update = $conn->prepare($sql_update)) {
+                    $stmt_update->bind_param("ssssii", $supplier_invoice_number_posted, $purchase_date_posted, $notes_posted, $status_posted, $updated_by, $invoice_id);
+                    if (!$stmt_update->execute()) {
+                        throw new Exception("خطأ أثناء تحديث الفاتورة: " . $stmt_update->error);
+                    }
+                    $stmt_update->close();
                 } else {
-                    $message = "<div class='alert alert-danger'>حدث خطأ أثناء تحديث الفاتورة: " . $stmt_update->error . "</div>";
+                    throw new Exception("خطأ في تحضير استعلام التحديث: " . $conn->error);
                 }
-                $stmt_update->close();
-            } else {
-                 $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام التحديث: " . $conn->error . "</div>";
+
+                // --- تعديل مصطفى: تحديث المخزون وسعر الشراء ---
+                $sql_items = "SELECT product_id, quantity, cost_price_per_unit FROM purchase_invoice_items WHERE purchase_invoice_id = ?";
+                if ($stmt_items = $conn->prepare($sql_items)) {
+                    $stmt_items->bind_param("i", $invoice_id);
+                    $stmt_items->execute();
+                    $res_items = $stmt_items->get_result();
+                    
+                    while ($row = $res_items->fetch_assoc()) {
+                        $pid = intval($row['product_id']);
+                        $qty = floatval($row['quantity']);
+                        $invoice_cost_price = floatval($row['cost_price_per_unit']);
+
+                        // جلب السعر القديم للمنتج
+                        $sql_old_price = "SELECT cost_price FROM products WHERE id = ? LIMIT 1";
+                        $stmt_old_price = $conn->prepare($sql_old_price);
+                        $stmt_old_price->bind_param("i", $pid);
+                        $stmt_old_price->execute();
+                        $res_old_price = $stmt_old_price->get_result();
+                        $old_cost_price = 0;
+                        if ($row_old = $res_old_price->fetch_assoc()) {
+                            $old_cost_price = floatval($row_old['cost_price']);
+                        }
+                        $stmt_old_price->close();
+
+                        // إضافة الكمية للمخزون إذا التحويل إلى fully_received
+                        if ($previous_status !== 'fully_received' && $status_posted === 'fully_received') {
+                            $sql_update_stock = "UPDATE products SET current_stock = current_stock + ?, cost_price = ? WHERE id = ?";
+                            $stmt_update_stock = $conn->prepare($sql_update_stock);
+                            $stmt_update_stock->bind_param("ddi", $qty, $invoice_cost_price, $pid);
+                            if (!$stmt_update_stock->execute()) {
+                                throw new Exception("فشل تحديث المخزون والسعر للمنتج ID {$pid}: " . $stmt_update_stock->error);
+                            }
+                            $stmt_update_stock->close();
+                        }
+
+                        // إعادة السعر القديم إذا تم التراجع عن fully_received
+                        if ($previous_status === 'fully_received' && $status_posted !== 'fully_received') {
+                            $sql_restore_price = "UPDATE products SET cost_price = ? WHERE id = ?";
+                            $stmt_restore_price = $conn->prepare($sql_restore_price);
+                            $stmt_restore_price->bind_param("di", $old_cost_price, $pid);
+                            if (!$stmt_restore_price->execute()) {
+                                throw new Exception("فشل إعادة السعر القديم للمنتج ID {$pid}: " . $stmt_restore_price->error);
+                            }
+                            $stmt_restore_price->close();
+                        }
+                    }
+                    $stmt_items->close();
+                }
+
+                // --- تحديث إجمالي الفاتورة ---
+                $sql_sum_total = "SELECT COALESCE(SUM(total_cost), 0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?";
+                if ($stmt_sum = $conn->prepare($sql_sum_total)) {
+                    $stmt_sum->bind_param("i", $invoice_id);
+                    $stmt_sum->execute();
+                    $res_sum = $stmt_sum->get_result();
+                    $row_sum = $res_sum->fetch_assoc();
+                    $invoice_total_calculated = floatval($row_sum['grand_total']);
+                    $stmt_sum->close();
+
+                    $sql_update_invoice_total = "UPDATE purchase_invoices SET total_amount = ? WHERE id = ?";
+                    if ($stmt_update_total = $conn->prepare($sql_update_invoice_total)) {
+                        $stmt_update_total->bind_param("di", $invoice_total_calculated, $invoice_id);
+                        if (!$stmt_update_total->execute()) {
+                            throw new Exception("فشل تحديث إجمالي الفاتورة: " . $stmt_update_total->error);
+                        }
+                        $stmt_update_total->close();
+                    } else {
+                        throw new Exception("خطأ في تحضير استعلام تحديث إجمالي الفاتورة: " . $conn->error);
+                    }
+                } else {
+                    throw new Exception("خطأ في تحضير استعلام حساب إجمالي الفاتورة: " . $conn->error);
+                }
+
+                // commit
+                $conn->commit();
+                $_SESSION['message'] = "<div class='alert alert-success'>تم تحديث بيانات فاتورة المشتريات رقم #{$invoice_id} بنجاح.</div>";
+                header("Location: " . BASE_URL . "admin/view_purchase_invoice.php?id=" . $invoice_id);
+                exit;
+
+            } catch (Exception $e) {
+                $conn->rollback();
+                $message = "<div class='alert alert-danger'>فشل تحديث الفاتورة: " . htmlspecialchars($e->getMessage()) . "</div>";
             }
         } else {
              if (empty($message)) {
                 $message = "<div class='alert alert-danger'>الرجاء إصلاح الأخطاء في النموذج.</div>";
              }
-             // إذا فشل التحقق، احتفظ بالبيانات المرسلة لعرضها في النموذج
              $supplier_invoice_number_current = $supplier_invoice_number_posted;
              $purchase_date_current = $purchase_date_posted;
              $notes_current = $notes_posted;
              $status_current = $status_posted;
         }
     }
-    // لإعادة جلب اسم المورد إذا فشل تحديث POST ولم يتم إعادة التوجيه
-    if($invoice_id > 0 && empty($supplier_name_current)){
-        $sql_refetch_supplier = "SELECT s.name FROM purchase_invoices pi JOIN suppliers s ON pi.supplier_id = s.id WHERE pi.id = ?";
-        if($stmt_refetch_s = $conn->prepare($sql_refetch_supplier)){
-            $stmt_refetch_s->bind_param("i", $invoice_id);
-            $stmt_refetch_s->execute();
-            $res_refetch_s = $stmt_refetch_s->get_result();
-            if($row_refetch_s = $res_refetch_s->fetch_assoc()){
-                $supplier_name_current = $row_refetch_s['name'];
-            }
-            $stmt_refetch_s->close();
-        }
-    }
-
 }
-// --- جلب بيانات الفاتورة لعرضها في النموذج (عند تحميل الصفحة عبر GET) ---
-// يتم هذا الجزء فقط إذا لم يكن هناك طلب POST للتحديث (لتجنب جلب البيانات القديمة بعد فشل POST)
+
+// --- جلب بيانات الفاتورة لعرضها في النموذج (GET) ---
 elseif (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $invoice_id = intval($_GET['id']);
     $sql_fetch = "SELECT pi.supplier_id, pi.supplier_invoice_number, pi.purchase_date, pi.notes, pi.status, s.name as supplier_name
@@ -119,10 +199,6 @@ elseif (isset($_GET['id']) && is_numeric($_GET['id'])) {
             exit;
         }
         $stmt_fetch->close();
-    } else {
-        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام جلب الفاتورة: " . $conn->error . "</div>";
-        header("Location: " . BASE_URL . "admin/manage_purchase_invoices.php");
-        exit;
     }
 } else {
     $_SESSION['message'] = "<div class='alert alert-warning'>رقم فاتورة المشتريات غير محدد.</div>";
@@ -135,7 +211,7 @@ $view_purchase_invoice_link = BASE_URL . "admin/view_purchase_invoice.php?id=" .
 $manage_purchase_invoices_link = BASE_URL . "admin/manage_purchase_invoices.php";
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">
@@ -193,6 +269,10 @@ require_once BASE_DIR . 'partials/navbar.php';
         </div>
     </div>
 </div>
+
+
+
+
 
 <?php
 $conn->close();

@@ -4,7 +4,6 @@ require_once dirname(__DIR__) . '/config.php';
 $class1 = "active";
 require_once BASE_DIR . 'partials/session_user.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
 
 // تعريف المتغيرات
 $name = $mobile = $city = $address = "";
@@ -51,7 +50,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_customer'])) {
 
         // جلب العنوان (اختياري)
         $address = trim($_POST["address"]);
-
+        
         // التحقق من عدم وجود أخطاء قبل الإدراج
         if (empty($name_err) && empty($mobile_err) && empty($city_err) && empty($message)) {
             $sql_insert = "INSERT INTO customers (name, mobile, city, address, created_by) VALUES (?, ?, ?, ?, ?)";
@@ -82,6 +81,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_customer'])) {
     }
 }
 
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

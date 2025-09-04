@@ -43,7 +43,7 @@ if ($result_low_stock) {
 }
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 // رابط صفحة تعديل المنتج
 $edit_product_link_base = BASE_URL . "admin/edit_product.php";
 ?>

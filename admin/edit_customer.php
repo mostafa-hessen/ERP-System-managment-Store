@@ -4,7 +4,6 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
 
 // تعريف المتغيرات
 $message = "";
@@ -138,6 +137,7 @@ else {
     header("location: " . ($_SESSION['role'] == 'admin' ? 'manage_customer.php' : 'show_customer.php'));
     exit;
 }
+require_once BASE_DIR . 'partials/sidebar.php';
 
 ?>
 
