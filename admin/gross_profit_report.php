@@ -48,33 +48,51 @@ if (!empty($start_date_filter) && !empty($end_date_filter)) {
 
         // 2. حساب إجمالي تكلفة البضاعة المباعة (COGS)
         // سنستخدم استعلاماً فرعياً لجلب آخر سعر شراء لكل منتج تم بيعه
-        $sql_cogs = "SELECT SUM(sold_items.quantity * COALESCE(last_costs.cost_price_per_unit, 0)) AS total_cogs
-                     FROM (
-                         SELECT ioi.product_id, ioi.quantity
-                         FROM invoice_out_items ioi
-                         JOIN invoices_out io ON ioi.invoice_out_id = io.id
-                         WHERE io.delivered = 'yes' AND io.created_at BETWEEN ? AND ?
-                     ) AS sold_items
-                     LEFT JOIN (
-                         SELECT pii.product_id, pii.cost_price_per_unit
-                         FROM purchase_invoice_items pii
-                         INNER JOIN (
-                             SELECT product_id, MAX(id) as max_pii_id
-                             FROM purchase_invoice_items
-                             GROUP BY product_id
-                         ) latest_pii ON pii.id = latest_pii.max_pii_id
-                     ) AS last_costs ON sold_items.product_id = last_costs.product_id";
+        // $sql_cogs = "SELECT SUM(sold_items.quantity * COALESCE(last_costs.cost_price_per_unit, 0)) AS total_cogs
+        //              FROM (
+        //                  SELECT ioi.product_id, ioi.quantity
+        //                  FROM invoice_out_items ioi
+        //                  JOIN invoices_out io ON ioi.invoice_out_id = io.id
+        //                  WHERE io.delivered = 'yes' AND io.created_at BETWEEN ? AND ?
+        //              ) AS sold_items
+        //              LEFT JOIN (
+        //                  SELECT pii.product_id, pii.cost_price_per_unit
+        //                  FROM purchase_invoice_items pii
+        //                  INNER JOIN (
+        //                      SELECT product_id, MAX(id) as max_pii_id
+        //                      FROM purchase_invoice_items
+        //                      GROUP BY product_id
+        //                  ) latest_pii ON pii.id = latest_pii.max_pii_id
+        //              ) AS last_costs ON sold_items.product_id = last_costs.product_id";
 
-        if ($stmt_cogs = $conn->prepare($sql_cogs)) {
-            $stmt_cogs->bind_param("ss", $start_date_sql, $end_date_sql);
-            if ($stmt_cogs->execute()) {
-                $result_cogs = $stmt_cogs->get_result();
-                if ($row_cogs = $result_cogs->fetch_assoc()) {
-                    $total_cogs = floatval($row_cogs['total_cogs'] ?? 0);
-                }
-            } else { $message .= "<div class='alert alert-danger'>خطأ في حساب تكلفة البضاعة المباعة: " . $stmt_cogs->error . "</div>"; }
-            $stmt_cogs->close();
-        } else { $message .= "<div class='alert alert-danger'>خطأ في تحضير استعلام تكلفة البضاعة المباعة: " . $conn->error . "</div>"; }
+        //  التعديل اللي بنجربه عشان نحل المشكله بتاع الارباح
+        $sql_cogs = "
+SELECT SUM(ioi.quantity * COALESCE(pii.cost_price_per_unit, 0)) AS total_cogs
+FROM invoice_out_items ioi
+JOIN invoices_out io ON ioi.invoice_out_id = io.id AND io.delivered = 'yes'
+LEFT JOIN (
+    SELECT p1.product_id, p1.cost_price_per_unit
+    FROM purchase_invoice_items p1
+    INNER JOIN (
+        SELECT product_id, MAX(id) AS max_id
+        FROM purchase_invoice_items
+        GROUP BY product_id
+    ) p2 ON p1.id = p2.max_id
+) pii ON ioi.product_id = pii.product_id
+WHERE io.created_at BETWEEN ? AND ?
+";
+
+
+      if ($stmt_cogs = $conn->prepare($sql_cogs)) {
+    $stmt_cogs->bind_param("ss", $start_date_sql, $end_date_sql);
+    if ($stmt_cogs->execute()) {
+        $result_cogs = $stmt_cogs->get_result();
+        if ($row_cogs = $result_cogs->fetch_assoc()) {
+            $total_cogs = floatval($row_cogs['total_cogs'] ?? 0);
+        }
+    } else { $message .= "<div class='alert alert-danger'>خطأ في حساب تكلفة البضاعة المباعة: " . $stmt_cogs->error . "</div>"; }
+    $stmt_cogs->close();
+} else { $message .= "<div class='alert alert-danger'>خطأ في تحضير استعلام تكلفة البضاعة المباعة: " . $conn->error . "</div>"; }
 
         // 3. حساب إجمالي الربح
         $gross_profit = $total_revenue - $total_cogs;

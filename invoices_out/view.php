@@ -124,7 +124,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_invoice_item'])) {
                 $_SESSION['message'] = "<div class='alert alert-danger'>الكمية المطلوبة للمنتج \"".htmlspecialchars($product_stock_data['name'])."\" غير متوفرة. الرصيد الحالي: ".floatval($product_stock_data['current_stock']).".</div>";
             } else {
                 $total_price_for_item = $quantity_to_add * $unit_price_to_add;
-                $sql_insert_item = "INSERT INTO invoice_out_items (invoice_out_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)";
+                // $sql_insert_item = "INSERT INTO invoice_out_items (invoice_out_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)"; //دا الكود الاصلي 
+                $sql_insert_item = "INSERT INTO invoice_out_items (invoice_out_id, product_id, quantity, selling_price, total_price) 
+                    VALUES (?, ?, ?, ?, ?)"; //دا بعد التعديل سعيد
+
                 $stmt_insert_item = $conn->prepare($sql_insert_item);
                 // تعديل أنواع bind_param: i, i, d, d, d
                 $stmt_insert_item->bind_param("iiddd", $invoice_id, $product_id_to_add, $quantity_to_add, $unit_price_to_add, $total_price_for_item); // <<< تغيير هنا
@@ -176,12 +179,22 @@ if($stmt_complete = $conn->prepare($sql_complete_invoice_data)) {
 
 // جلب بنود الفاتورة فقط إذا تم العثور على بيانات الفاتورة الرئيسية
 if ($invoice_data) {
-    $sql_items = "SELECT item.id as item_id, item.product_id, item.quantity, item.unit_price, item.total_price,
-                         p.product_code, p.name as product_name, p.unit_of_measure
-                  FROM invoice_out_items item
-                  JOIN products p ON item.product_id = p.id
-                  WHERE item.invoice_out_id = ?
-                  ORDER BY item.id ASC";
+    // $sql_items = "SELECT item.id as item_id, item.product_id, item.quantity, item.unit_price, item.total_price,
+    //                      p.product_code, p.name as product_name, p.unit_of_measure
+    //               FROM invoice_out_items item
+    //               JOIN products p ON item.product_id = p.id
+    //               WHERE item.invoice_out_id = ?
+    //               ORDER BY item.id ASC";  //دا الكود الاصلي
+
+    $sql_items = "SELECT item.id as item_id, item.product_id, item.quantity, 
+                     item.selling_price as unit_price, 
+                     item.total_price,
+                     p.product_code, p.name as product_name, p.unit_of_measure
+              FROM invoice_out_items item
+              JOIN products p ON item.product_id = p.id
+              WHERE item.invoice_out_id = ?
+              ORDER BY item.id ASC";//دا بعد التعديل سعيد
+
     if ($stmt_items = $conn->prepare($sql_items)) {
         $stmt_items->bind_param("i", $invoice_id);
         $stmt_items->execute();
@@ -194,7 +207,12 @@ if ($invoice_data) {
     } else { $message .= "<div class='alert alert-warning'>خطأ في جلب بنود الفاتورة: " . $conn->error . "</div>"; }
 
     if ($can_manage_invoice_items) {
-        $sql_products = "SELECT id, product_code, name, current_stock, unit_of_measure FROM products WHERE current_stock > 0 ORDER BY name ASC";
+        // $sql_products = "SELECT id, product_code, name, current_stock, unit_of_measure FROM products WHERE current_stock > 0 ORDER BY name ASC"; //الكود الاصلي 
+        $sql_products = "SELECT id, product_code, name, current_stock, unit_of_measure, selling_price 
+                 FROM products 
+                 WHERE current_stock > 0 
+                 ORDER BY name ASC"; //الكود بعد التعديل سعيد
+
         $result_products_query = $conn->query($sql_products); // استخدام متغير مختلف لتجنب التعارض
         if ($result_products_query) {
             while ($row_prod = $result_products_query->fetch_assoc()) {
@@ -341,9 +359,16 @@ $delete_item_link = BASE_URL . "invoices_out/delete_invoice_item.php";
                                 <option value="">-- اختر منتجاً --</option>
                                 <?php if (!empty($products_list)): ?>
                                     <?php foreach ($products_list as $product): ?>
-                                        <option value="<?php echo $product['id']; ?>" data-stock="<?php echo floatval($product['current_stock']); // <-- تعديل لـ floatval ?>" data-unit="<?php echo htmlspecialchars($product['unit_of_measure']); ?>">
+                                        <!-- <option value="<?php echo $product['id']; ?>" data-stock="<?php echo floatval($product['current_stock']); // <-- تعديل لـ floatval ?>" data-unit="<?php echo htmlspecialchars($product['unit_of_measure']); ?>">
                                             <?php echo htmlspecialchars($product['product_code']); ?> - <?php echo htmlspecialchars($product['name']); ?> (الرصيد: <?php echo floatval($product['current_stock']); // <-- تعديل لـ floatval ?>)
-                                        </option>
+                                        </option> --> //الكود الاصلي 
+<option value="<?php echo $product['id']; ?>" 
+        data-stock="<?php echo floatval($product['current_stock']); ?>" 
+        data-unit="<?php echo htmlspecialchars($product['unit_of_measure']); ?>"
+        data-price="<?php echo floatval($product['selling_price']); ?>">
+    <?php echo htmlspecialchars($product['product_code']); ?> - <?php echo htmlspecialchars($product['name']); ?> (الرصيد: <?php echo floatval($product['current_stock']); ?>)
+</option> //الكود بعد التعديل سعيد
+
                                     <?php endforeach; ?>
                                 <?php else: ?>
                                     <option value="" disabled>لا توجد منتجات متاحة للإضافة (أو رصيدها صفر)</option>
@@ -407,22 +432,69 @@ $delete_item_link = BASE_URL . "invoices_out/delete_invoice_item.php";
 
 </div>
 <script>
+// function updateUnitPriceAndStock(selectElement) {
+//     const selectedOption = selectElement.options[selectElement.selectedIndex];
+//     const stock = parseFloat(selectedOption.getAttribute('data-stock'));
+//     const unit = selectedOption.getAttribute('data-unit');
+//     const quantityInput = document.getElementById('quantity');
+//     const stockWarning = document.getElementById('stock_warning');
+//     const addItemBtn = document.getElementById('add_item_btn');
+
+//     quantityInput.max = stock.toFixed(2); // تحديد الحد الأقصى للكمية مع كسور
+//     document.getElementById('unit_display').textContent = 'وحدة القياس: ' + (unit || '');
+
+//     if (stock === 0) {
+//         stockWarning.textContent = 'تنبيه: رصيد هذا المنتج هو صفر!';
+//         stockWarning.classList.remove('d-none');
+//         addItemBtn.disabled = true;
+//         quantityInput.value = ''; // أفرغ الكمية
+//     } else {
+//         stockWarning.classList.add('d-none');
+//         addItemBtn.disabled = false;
+//     }
+
+//     quantityInput.oninput = function() {
+//         const currentQuantity = parseFloat(this.value);
+//         if (currentQuantity > stock) {
+//             stockWarning.textContent = 'الكمية المطلوبة ('+ this.value +') أكبر من الرصيد ('+ stock.toFixed(2) +')!';
+//             stockWarning.classList.remove('d-none');
+//             addItemBtn.disabled = true;
+//         } else if (currentQuantity <= 0 && this.value !== "") {
+//              stockWarning.textContent = 'الكمية يجب أن تكون أكبر من صفر.';
+//              stockWarning.classList.remove('d-none');
+//              addItemBtn.disabled = true;
+//         } else {
+//             stockWarning.classList.add('d-none');
+//             addItemBtn.disabled = false;
+//         }
+//     };
+//     // استدعاء oninput يدوياً للتحقق من القيمة الأولية للكمية إذا كانت 1 والرصيد 0
+//     if (quantityInput.value) {
+//       const event = new Event('input', { bubbles: true });
+//       quantityInput.dispatchEvent(event);
+//     }
+// } //الكود الاصلي 
+
 function updateUnitPriceAndStock(selectElement) {
     const selectedOption = selectElement.options[selectElement.selectedIndex];
     const stock = parseFloat(selectedOption.getAttribute('data-stock'));
     const unit = selectedOption.getAttribute('data-unit');
+    const price = parseFloat(selectedOption.getAttribute('data-price')); // <-- هنا
     const quantityInput = document.getElementById('quantity');
+    const unitPriceInput = document.getElementById('unit_price'); // <-- حقل السعر
     const stockWarning = document.getElementById('stock_warning');
     const addItemBtn = document.getElementById('add_item_btn');
 
-    quantityInput.max = stock.toFixed(2); // تحديد الحد الأقصى للكمية مع كسور
+    unitPriceInput.value = price.toFixed(2); // <-- هنا يتم ملء سعر الوحدة تلقائي
+
+    quantityInput.max = stock.toFixed(2);
     document.getElementById('unit_display').textContent = 'وحدة القياس: ' + (unit || '');
 
     if (stock === 0) {
         stockWarning.textContent = 'تنبيه: رصيد هذا المنتج هو صفر!';
         stockWarning.classList.remove('d-none');
         addItemBtn.disabled = true;
-        quantityInput.value = ''; // أفرغ الكمية
+        quantityInput.value = '';
     } else {
         stockWarning.classList.add('d-none');
         addItemBtn.disabled = false;
@@ -443,12 +515,13 @@ function updateUnitPriceAndStock(selectElement) {
             addItemBtn.disabled = false;
         }
     };
-    // استدعاء oninput يدوياً للتحقق من القيمة الأولية للكمية إذا كانت 1 والرصيد 0
+
     if (quantityInput.value) {
       const event = new Event('input', { bubbles: true });
       quantityInput.dispatchEvent(event);
     }
-}
+}//الكود بعد التعديل
+
 
 
 // <script> اول كود البحث

@@ -73,6 +73,27 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['create_invoice_now']))
 
 
 // --- معالجة البحث (باستخدام POST) ---
+// if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['search_button'])) {
+//     $search_term = trim($_POST['search_term']);
+// }
+
+// // --- بناء وعرض العملاء (مع JOIN والبحث) ---
+// $sql_select = "SELECT c.id, c.name, c.mobile, c.city, c.address, c.created_at, u.username as creator_name
+//                FROM customers c
+//                LEFT JOIN users u ON c.created_by = u.id ";
+
+// $params = [];
+// $types = "";
+
+// if (!empty($search_term)) {
+//     $sql_select .= " WHERE (c.name LIKE ? OR c.mobile LIKE ?) ";
+//     $search_like = "%" . $search_term . "%";
+//     $params[] = $search_like;
+//     $params[] = $search_like;
+//     $types .= "ss";
+// } //الكود الاصلي 
+
+// --- معالجة البحث (باستخدام POST) ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['search_button'])) {
     $search_term = trim($_POST['search_term']);
 }
@@ -86,14 +107,25 @@ $params = [];
 $types = "";
 
 if (!empty($search_term)) {
-    $sql_select .= " WHERE (c.name LIKE ? OR c.mobile LIKE ?) ";
+    // البحث بالاسم أو الموبايل أو كود العميل (ID)
+    $sql_select .= " WHERE (c.name LIKE ? OR c.mobile LIKE ? OR c.id = ?) ";
     $search_like = "%" . $search_term . "%";
     $params[] = $search_like;
     $params[] = $search_like;
-    $types .= "ss";
-}
+    
+    // التحقق إذا كان مصطلح البحث رقمًا (للبحث بالكود)
+    if (is_numeric($search_term)) {
+        $params[] = intval($search_term);
+        $types .= "ssi"; // نوعين نص ورقم
+    } else {
+        $params[] = 0; // قيمة غير صحيحة للبحث بالكود إذا لم يكن رقمًا
+        $types .= "ssi"; // نوعين نص ورقم
+    }
+}//الكود الجديد سعيد
 
-$sql_select .= " ORDER BY c.id DESC";
+// $sql_select .= " ORDER BY c.id DESC"; // دا الكود الاصلي 
+$sql_select .= " ORDER BY (c.id = 8) DESC, c.id DESC";  //دا تعديل سعيد
+
 
 if ($stmt_select = $conn->prepare($sql_select)) {
     if (!empty($params)) {
@@ -114,7 +146,7 @@ if ($stmt_select = $conn->prepare($sql_select)) {
 <div class="container mt-5 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="fas fa-search"></i> استعراض وبحث العملاء</h1>
-        <a href="insert_customer.php" class="btn btn-success"><i class="fas fa-plus-circle"></i> إضافة عميل جديد</a>
+        <a href="insert.php" class="btn btn-success"><i class="fas fa-plus-circle"></i> إضافة عميل جديد</a>
     </div>
 
     <div class="card mb-4">
