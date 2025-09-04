@@ -95,7 +95,7 @@ $current_month_net_profit = $current_month_gross_profit - $current_month_expense
 
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

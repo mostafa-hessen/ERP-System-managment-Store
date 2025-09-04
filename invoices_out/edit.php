@@ -4,7 +4,7 @@ $class1 = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_user.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 
 // --- !! التحقق من أن المستخدم هو مدير !! ---
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {

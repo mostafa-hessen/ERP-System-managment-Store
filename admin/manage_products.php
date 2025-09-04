@@ -4,7 +4,7 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 
@@ -59,6 +59,7 @@ $result_products = $conn->query($sql_select_products);
 
 
 ?>
+
 
 <div class="container mt-5 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -135,6 +136,7 @@ $result_products = $conn->query($sql_select_products);
         </div>
     </div>
 </div>
+
 
 <?php
 $conn->close();

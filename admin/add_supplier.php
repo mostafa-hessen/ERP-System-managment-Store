@@ -109,7 +109,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_supplier'])) {
 }
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

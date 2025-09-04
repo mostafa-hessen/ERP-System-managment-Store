@@ -125,7 +125,7 @@ $add_expense_link = BASE_URL . "admin/add_expense.php";
 $edit_expense_link_base = BASE_URL . "admin/edit_expense.php";
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

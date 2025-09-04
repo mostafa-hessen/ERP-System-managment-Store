@@ -211,7 +211,7 @@ $view_purchase_invoice_link = BASE_URL . "admin/view_purchase_invoice.php?id=" .
 $manage_purchase_invoices_link = BASE_URL . "admin/manage_purchase_invoices.php";
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

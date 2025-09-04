@@ -4,7 +4,7 @@ require_once dirname(__DIR__) . '/config.php';
 $class1 = "active";
 require_once BASE_DIR . 'partials/session_user.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 
 // تعريف المتغيرات
 $name = $mobile = $city = $address = "";

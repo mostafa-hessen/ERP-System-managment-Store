@@ -163,7 +163,7 @@ if ($result_select_categories) {
 
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
 ?>
 

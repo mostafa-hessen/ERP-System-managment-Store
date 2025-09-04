@@ -4,7 +4,7 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = ""; // لرسائل النجاح أو الخطأ
 $username_err = $email_err = $role_err = ""; // لرسائل أخطاء الحقول

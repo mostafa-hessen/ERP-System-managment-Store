@@ -150,7 +150,7 @@ elseif (($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['supplier_id_to_ed
 }
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">
