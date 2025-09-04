@@ -24,8 +24,7 @@
         /* .welcome-jumbotron { background-color: #ffffff; padding: 2rem 1rem; margin-bottom: 2rem; border-radius: 0.3rem; } */ */
     </style> -->
 </head>
-<body>
-    <?php include BASE_DIR . 'partials/sidebar.php'; ?>
+<body data-app data-theme="dark">
 
 <!-- المحتوى يبدأ هنا -->
 <div class="main-content">

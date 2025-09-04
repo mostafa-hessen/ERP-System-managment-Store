@@ -7,7 +7,7 @@ require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
-    <div class="container-fluid">
+    <div class="container-fluid mt-4" >
 
         <!-- الوصول السريع -->
         <div class="card dashboard-card fade-in">

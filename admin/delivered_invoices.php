@@ -5,7 +5,7 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php'; // للوصول لـ config.php من داخل مجلد admin
 require_once BASE_DIR . 'partials/session_admin.php'; // هذه الصفحة للمدير فقط
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 $selected_group = "";

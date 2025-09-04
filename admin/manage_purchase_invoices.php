@@ -3,6 +3,8 @@ $page_title = "إدارة فواتير المشتريات";
 $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
+require_once BASE_DIR . 'partials/sidebar.php';
+
 
 $message = "";
 $selected_supplier_id = "";
