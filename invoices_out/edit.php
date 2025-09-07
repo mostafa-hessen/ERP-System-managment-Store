@@ -4,7 +4,7 @@ $class1 = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_user.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/sidebar.php';
+
 
 // --- !! التحقق من أن المستخدم هو مدير !! ---
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
@@ -112,6 +112,8 @@ if ($_SERVER["REQUEST_METHOD"] != "POST" || !isset($_POST['update_invoice'])) {
         $invoice_id = intval($_GET['id']);
     }
 }
+
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

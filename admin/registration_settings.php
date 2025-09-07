@@ -81,7 +81,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         <button type="submit" name="update_registration_settings" class="btn btn-primary">
                             <i class="fas fa-save"></i> حفظ التغييرات
                         </button>
-                         <a href="<?php echo BASE_URL; ?>admin/" class="btn btn-secondary">إلغاء</a> </form>
+                         <a href="<?php echo BASE_URL; ?>user/welcome.php" class="btn btn-secondary">إلغاء</a> </form>
                 </div>
             </div>
         </div>

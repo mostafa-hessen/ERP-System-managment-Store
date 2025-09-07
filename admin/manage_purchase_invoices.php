@@ -3,7 +3,6 @@ $page_title = "إدارة فواتير المشتريات";
 $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
-require_once BASE_DIR . 'partials/sidebar.php';
 
 
 $message = "";
@@ -164,8 +163,10 @@ $edit_purchase_invoice_link = BASE_URL . "admin/edit_purchase_invoice.php";
 $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
 
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+require_once BASE_DIR . 'partials/sidebar.php';
+
 ?>
+
 
 <div class="container mt-5 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-4">

@@ -1,7 +1,7 @@
 <?php
 // invoices_out/view.php
 $page_title = "تفاصيل الفاتورة - كاشير سريع";
-
+$page_css="invoice_out.css";
 // تحميل الإعدادات (اضبط المسار إذا لزم)
 if (file_exists(dirname(__DIR__) . '/config.php')) {
     require_once dirname(__DIR__) . '/config.php';
@@ -14,15 +14,13 @@ if (file_exists(dirname(__DIR__) . '/config.php')) {
 }
 
 // تأكد تسجيل الدخول
-session_start();
+// session_start();
 if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
     header("Location: " . BASE_URL . "auth/login.php");
     exit;
 }
 
-// رأس الصفحة (partials)
-require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/navbar.php';
+
 
 // إعداد متغيرات
 $message = "";
@@ -126,18 +124,11 @@ if ($invoice_id) {
 }
 
 // --- HTML output: واجهة الكاشير (مبسطة) ---
+// رأس الصفحة (partials)
+require_once BASE_DIR . 'partials/header.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
-<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>كاشير — فاتورة</title>
-  <!-- رابط CSS خارجي: ضع الملف assets/css/cashier.css -->
-  <!-- <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/print_invoice.css"> -->
-  <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/cashier.css">
-</head>
-<body>
+
   <div class="app">
     <?php echo $message; ?>
     <header>
@@ -262,7 +253,7 @@ if ($invoice_id) {
           </select>
         </div>
 
-        <!-- <div class="quick-card">
+        <div class="quick-card">
           <h4 style="margin:0 0 6px 0">إضافة سطر سريع</h4>
           <input id="quick_code" placeholder="أدخل كود المنتج ثم Enter" style="width:100%;padding:8px;border-radius:8px;border:1px solid #e6e9ee;margin-bottom:8px" />
           <div style="display:flex;gap:8px">
@@ -273,7 +264,7 @@ if ($invoice_id) {
             <button id="btn-quick-add" class="btn-primary" style="flex:1">أضف سطر سريع</button>
             <button id="btn-scan" class="small-btn">مسح باركود</button>
           </div>
-        </div> -->
+        </div>
 
         <div class="quick-card">
           <h4 style="margin:0 0 6px 0">ملاحظات سريعة</h4>
@@ -283,54 +274,31 @@ if ($invoice_id) {
     </div>
   </div>
 
- <script>
-  // عناصر أساسية (آمنة: تحقق من وجودها قبل الاستخدام)
-  const productListEl = document.getElementById('product_list');
-  const searchInput = document.getElementById('product_search_input');
-  const btnAddSelected = document.getElementById('btn-add-selected');
-  const btnComplete = document.getElementById('btn-complete');
-  const btnClear = document.getElementById('btn-clear');
-  const btnPrint = document.getElementById('btn-print');
-  const quickQty = document.getElementById('quick_qty');
-  const customerSelect = document.getElementById('customer_select');
-  const invoiceNote = document.getElementById('invoice_note');
-  const quickCode = document.getElementById('quick_code'); // قد يكون موجوداً أو لا
-  const btnQuickAdd = document.getElementById('btn-quick-add'); // قد يكون معلقًا
+  <script>
+    // اجلب عناصر
+    const productListEl = document.getElementById('product_list');
+    const searchInput = document.getElementById('product_search_input');
+    const btnAddSelected = document.getElementById('btn-add-selected');
+    let selectedProductEl = null;
 
-  // القيم المولدة من السيرفر
-  const AJAX_SEARCH_URL = '<?php echo BASE_URL; ?>ajax_search_products.php';
-  const AJAX_COMPLETE_URL = '<?php echo BASE_URL; ?>invoices_out/ajax_complete_invoice.php';
-  const CSRF_TOKEN = '<?php echo $csrf_token; ?>';
-  const CURRENT_INVOICE_ID = <?php echo $invoice_id ? $invoice_id : 'null'; ?>;
-
-  let selectedProductEl = null;
-  let invoiceLines = []; // مصفوفة السطور في الفاتورة
-
-  // ===== helper functions =====
-  function numberFormat(n){ return parseFloat(n || 0).toFixed(2); }
-  function escapeHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-  // ===== اختيار منتج من القائمة =====
-  if (productListEl) {
+    // اختيار منتج من القائمة
     productListEl.addEventListener('click', (e) => {
       const item = e.target.closest('.product-item');
       if (!item) return;
       if (selectedProductEl) selectedProductEl.classList.remove('selected');
       selectedProductEl = item;
       item.classList.add('selected');
-      if (quickQty) quickQty.value = 1;
+      document.getElementById('quick_qty').value = 1;
     });
-  }
 
-  // ===== بحث live عبر AJAX (debounced) =====
-  let searchTimer = null;
-  if (searchInput && productListEl) {
+    // بحث حي — نستخدم AJAX لسرعة وفعالية
+    let searchTimer = null;
     searchInput.addEventListener('input', () => {
       const q = searchInput.value.trim();
       if (searchTimer) clearTimeout(searchTimer);
-      if (q.length < 2) return;
+      if (q.length < 2) return; // تجنب الطلبات الصغيرة
       searchTimer = setTimeout(() => {
-        fetch(AJAX_SEARCH_URL + '?term=' + encodeURIComponent(q), { credentials: 'same-origin' })
+        fetch('<?php echo BASE_URL; ?>ajax_search_products.php?term=' + encodeURIComponent(q))
           .then(r => r.json())
           .then(data => {
             productListEl.innerHTML = '';
@@ -345,122 +313,115 @@ if ($invoice_id) {
               div.innerHTML = `<div><div><strong>${escapeHtml(it.name)}</strong></div><div class="meta">كود: ${escapeHtml(it.code)} — رصيد: ${parseFloat(it.stock).toFixed(2)}</div></div><div class="meta">${parseFloat(it.price).toFixed(2)} ج.م</div>`;
               productListEl.appendChild(div);
             });
-          })
-          .catch(err => {
-            console.error('خطأ في جلب نتائج البحث:', err);
-          });
+          }).catch(err => console.error(err));
       }, 250);
     });
-  }
 
-  // ===== إضافة منتج محدد =====
-  if (btnAddSelected) {
-    btnAddSelected.addEventListener('click', () => {
+    // إضافة المنتج المحدد
+    document.getElementById('btn-add-selected').addEventListener('click', () => {
       if (!selectedProductEl) { alert('اختر منتجاً أولاً من القائمة'); return; }
       const id = selectedProductEl.getAttribute('data-id');
       const name = selectedProductEl.getAttribute('data-name');
       const code = selectedProductEl.getAttribute('data-code');
       const price = parseFloat(selectedProductEl.getAttribute('data-price')) || 0;
       const stock = parseFloat(selectedProductEl.getAttribute('data-stock')) || 0;
-      const qty = parseFloat((quickQty && quickQty.value) || 1) || 1;
+      const qty = parseFloat(document.getElementById('quick_qty').value) || 1;
       if (qty <= 0) { alert('الكمية يجب أن تكون أكبر من صفر'); return; }
       if (qty > stock) if(!confirm('الكمية أكبر من الرصيد المتاح. الاستمرار؟')) return;
       addInvoiceRow({id,name,code,price,qty});
     });
-  }
 
-  // ===== سطر سريع (إن وُجِد الزر) =====
-  if (btnQuickAdd) {
-    btnQuickAdd.addEventListener('click', () => {
-      const code = (document.getElementById('quick_code')?.value || '').trim();
-      const qty = parseFloat(document.getElementById('quick_qty2')?.value || 1) || 1;
-      const price = parseFloat(document.getElementById('quick_price')?.value || 0) || 0;
+    // إضافة سطر سريع
+    document.getElementById('btn-quick-add').addEventListener('click', () => {
+      const code = document.getElementById('quick_code').value.trim();
+      const qty = parseFloat(document.getElementById('quick_qty2').value) || 1;
+      const price = parseFloat(document.getElementById('quick_price').value) || 0;
       if (!code) { alert('أدخل كود المنتج'); return; }
+      // جرب إيجاد المنتج في القائمة
       const found = Array.from(productListEl.querySelectorAll('.product-item')).find(div => div.getAttribute('data-code') === code);
-      if (found) addInvoiceRow({id: found.getAttribute('data-id'), name: found.getAttribute('data-name'), code, price: parseFloat(found.getAttribute('data-price')) || price, qty});
-      else addInvoiceRow({id: null, name: 'سطر سريع: ' + code, code, price, qty});
-      if (document.getElementById('quick_code')) document.getElementById('quick_code').value = '';
-      if (document.getElementById('quick_price')) document.getElementById('quick_price').value = '';
-      if (document.getElementById('quick_qty2')) document.getElementById('quick_qty2').value = 1;
+      if (found) {
+        addInvoiceRow({id: found.getAttribute('data-id'), name: found.getAttribute('data-name'), code, price: parseFloat(found.getAttribute('data-price')) || price, qty});
+      } else {
+        addInvoiceRow({id: null, name: 'سطر سريع: ' + code, code, price, qty});
+      }
+      document.getElementById('quick_code').value = '';
+      document.getElementById('quick_price').value = '';
+      document.getElementById('quick_qty2').value = 1;
     });
-  }
 
-  // دعم Enter في حقل الكود السريع (إن وُجد)
-  if (quickCode) {
-    quickCode.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ btnQuickAdd?.click(); }});
-  }
-
-  // ===== إدارة سطور الفاتورة =====
-  const invoiceBody = document.getElementById('invoice_body');
-  function addInvoiceRow(item) {
-    const existing = invoiceLines.find(r => r.id && r.id == item.id) || invoiceLines.find(r => !r.id && r.code === item.code);
-    if (existing) existing.qty = parseFloat(existing.qty) + parseFloat(item.qty);
-    else invoiceLines.push({lineId: Date.now(), ...item});
-    renderInvoice();
-  }
-  function renderInvoice() {
-    if (!invoiceBody) return;
-    invoiceBody.innerHTML = '';
-    let idx = 1; let subtotal = 0;
-    invoiceLines.forEach(line => {
-      const lineTotal = (parseFloat(line.price) || 0) * (parseFloat(line.qty) || 0);
-      subtotal += lineTotal;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${idx++}</td>
-        <td>${escapeHtml(line.name)}</td>
-        <td>${escapeHtml(line.code || '')}</td>
-        <td><input data-lineid="${line.lineId}" class="qty-input" value="${numberFormat(line.qty)}" /></td>
-        <td><input data-lineid-price="${line.lineId}" class="qty-input" value="${numberFormat(line.price)}" /></td>
-        <td class="line-total">${numberFormat(lineTotal)} ج.م</td>
-        <td><button data-delete="${line.lineId}" class="small-btn">حذف</button></td>
-      `;
-      invoiceBody.appendChild(tr);
-    });
-    document.getElementById('subtotal').textContent = numberFormat(subtotal) + ' ج.م';
-    const tax = subtotal * 0.14; document.getElementById('tax').textContent = numberFormat(tax) + ' ج.م';
-    document.getElementById('total').textContent = numberFormat(subtotal + tax) + ' ج.م';
-    attachRowHandlers();
-  }
-  function attachRowHandlers(){
-    if (!invoiceBody) return;
-    invoiceBody.querySelectorAll('[data-delete]').forEach(btn => btn.onclick = function(){
-      const id = this.getAttribute('data-delete');
-      invoiceLines = invoiceLines.filter(l => String(l.lineId) !== id);
+    // جدول الفاتورة
+    const invoiceBody = document.getElementById('invoice_body');
+    let invoiceLines = []; // [{lineId, id, name, code, price, qty}]
+    function addInvoiceRow(item) {
+      const existing = invoiceLines.find(r => r.id && r.id == item.id) || invoiceLines.find(r => !r.id && r.code === item.code);
+      if (existing) existing.qty = parseFloat(existing.qty) + parseFloat(item.qty);
+      else invoiceLines.push({lineId: Date.now(), ...item});
       renderInvoice();
-    });
-    invoiceBody.querySelectorAll('input[data-lineid]').forEach(inp => {
-      inp.onchange = function(){
-        const id = this.getAttribute('data-lineid'); const val = parseFloat(this.value) || 0;
-        const line = invoiceLines.find(l => String(l.lineId) === id);
-        if (line) { line.qty = val; renderInvoice(); }
-      }
-    });
-    invoiceBody.querySelectorAll('input[data-lineid-price]').forEach(inp => {
-      inp.onchange = function(){
-        const id = this.getAttribute('data-lineid-price'); const val = parseFloat(this.value) || 0;
-        const line = invoiceLines.find(l => String(l.lineId) === id);
-        if (line) { line.price = val; renderInvoice(); }
-      }
-    });
-  }
+    }
 
-  // ===== إتمام الفاتورة (AJAX) مع CSRF ومسار صحيح =====
-  if (btnComplete) {
-    btnComplete.addEventListener('click', () => {
+    function renderInvoice() {
+      invoiceBody.innerHTML = '';
+      let idx = 1; let subtotal = 0;
+      invoiceLines.forEach(line => {
+        const lineTotal = (parseFloat(line.price) || 0) * (parseFloat(line.qty) || 0);
+        subtotal += lineTotal;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${idx++}</td>
+          <td>${escapeHtml(line.name)}</td>
+          <td>${escapeHtml(line.code || '')}</td>
+          <td><input data-lineid="${line.lineId}" class="qty-input" value="${numberFormat(line.qty)}" /></td>
+          <td><input data-lineid-price="${line.lineId}" class="qty-input" value="${numberFormat(line.price)}" /></td>
+          <td class="line-total">${numberFormat(lineTotal)} ج.م</td>
+          <td><button data-delete="${line.lineId}" class="small-btn">حذف</button></td>
+        `;
+        invoiceBody.appendChild(tr);
+      });
+      document.getElementById('subtotal').textContent = numberFormat(subtotal) + ' ج.م';
+      const tax = subtotal * 0.14; document.getElementById('tax').textContent = numberFormat(tax) + ' ج.م';
+      document.getElementById('total').textContent = numberFormat(subtotal + tax) + ' ج.م';
+      attachRowHandlers();
+    }
+
+    function attachRowHandlers(){
+      invoiceBody.querySelectorAll('[data-delete]').forEach(btn => btn.onclick = function(){
+        const id = this.getAttribute('data-delete');
+        invoiceLines = invoiceLines.filter(l => String(l.lineId) !== id);
+        renderInvoice();
+      });
+      invoiceBody.querySelectorAll('input[data-lineid]').forEach(inp => {
+        inp.onchange = function(){
+          const id = this.getAttribute('data-lineid'); const val = parseFloat(this.value) || 0;
+          const line = invoiceLines.find(l => String(l.lineId) === id);
+          if (line) { line.qty = val; renderInvoice(); }
+        }
+      });
+      invoiceBody.querySelectorAll('input[data-lineid-price]').forEach(inp => {
+        inp.onchange = function(){
+          const id = this.getAttribute('data-lineid-price'); const val = parseFloat(this.value) || 0;
+          const line = invoiceLines.find(l => String(l.lineId) === id);
+          if (line) { line.price = val; renderInvoice(); }
+        }
+      });
+    }
+
+    function numberFormat(n){ return parseFloat(n || 0).toFixed(2); }
+    function escapeHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // إتمام الفاتورة (AJAX) - يرسل CSRF header
+    document.getElementById('btn-complete').addEventListener('click', () => {
       if (invoiceLines.length === 0) { alert('لا توجد بنود في الفاتورة'); return; }
       const payload = {
-        invoice_id: CURRENT_INVOICE_ID,
-        customer_id: (customerSelect ? customerSelect.value : null) || null,
-        note: (invoiceNote ? invoiceNote.value : '') || '',
+        invoice_id: <?php echo $invoice_id ? $invoice_id : 'null'; ?>,
+        customer_id: document.getElementById('customer_select').value || null,
+        note: document.getElementById('invoice_note').value || '',
         lines: invoiceLines
       };
-      fetch(AJAX_COMPLETE_URL, {
+      fetch('<?php echo BASE_URL; ?>invoices_out/ajax_complete_invoice.php', {
         method: 'POST',
-        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-Token': CSRF_TOKEN
+          'X-CSRF-Token': '<?php echo $csrf_token; ?>'
         },
         body: JSON.stringify(payload)
       }).then(r => r.json()).then(resp => {
@@ -473,16 +434,13 @@ if ($invoice_id) {
         }
       }).catch(err => { alert('خطأ فني'); console.error(err); });
     });
-  }
 
-  // مساعدة: تفريغ وطباعة
-  if (btnClear) btnClear.addEventListener('click', ()=>{ if(confirm('مسح كل البنود؟')){ invoiceLines=[]; renderInvoice(); }});
-  if (btnPrint) btnPrint.addEventListener('click', ()=> window.print());
-
-  // بدء العرض
-  renderInvoice();
-</script>
-
+    // وظائف مساعدة
+    document.getElementById('btn-clear').addEventListener('click', ()=>{ if(confirm('مسح كل البنود؟')){ invoiceLines=[]; renderInvoice(); }});
+    document.getElementById('btn-print').addEventListener('click', ()=> window.print());
+    document.getElementById('quick_code').addEventListener('keydown', function(e){ if(e.key==='Enter'){ document.getElementById('btn-quick-add').click(); }});
+    renderInvoice();
+  </script>
 
 </body>
 </html>

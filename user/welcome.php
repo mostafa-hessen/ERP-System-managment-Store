@@ -14,9 +14,12 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <div class="card-header">الوصول السريع</div>
             <div class="card-body">
                 <div class="d-flex flex-wrap">
-                    <a href="<?php echo BASE_URL; ?>admin/manage_purchase_invoices.php" class="btn btn-primary btn-action">
+                    <a href="<?php echo BASE_URL; ?>invoices_out/create_invoice.php" class="btn btn-primary btn-action">
                         <i class="fas fa-plus"></i> إضافة فاتورة بيع
                     </a>
+                    <!-- <a href="<?php echo BASE_URL; ?>customer/show.php" class="btn btn-primary btn-action">
+                        <i class="fas fa-plus"></i> إضافة فاتورة بيع
+                    </a> -->
                     <a href="<?php echo BASE_URL; ?>admin/manage_customer.php" class="btn btn-success btn-action">
                         <i class="fas fa-user-plus"></i> إضافة عميل
                     </a>
@@ -66,9 +69,18 @@ require_once BASE_DIR . 'partials/sidebar.php';
                 <div class="card-header category-sales">المبيعات والعملاء</div>
                 <div class="card-body">
                     <div class="d-grid gap-2">
-                        <a href="<?php echo BASE_URL; ?>admin/manage_purchase_invoices.php" class="btn btn-outline-primary text-start">
-                            <i class="fas fa-cash-register me-2"></i> فواتير البيع
+                        <a href="<?php echo BASE_URL; ?>admin/pending_invoices.php"class="btn btn-outline-primary text-start">
+                            <i class="fas fa-cash-register me-2"></i>
+                             فواتير البيع المؤجله
+
                         </a>
+                        <a  href="<?php echo BASE_URL; ?>admin/delivered_invoices.php" class="btn btn-outline-primary text-start">
+                                               <i class="fas fa-check-double card-icon-lg text-info mb-3"></i>
+
+                             فواتير البيع المسلمه
+
+                        </a>
+                        
                         <a href="<?php echo BASE_URL; ?>admin/manage_customer.php" class="btn btn-outline-primary text-start">
                             <i class="fas fa-users me-2"></i> إدارة العملاء
                         </a>
@@ -87,8 +99,9 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         <a href="<?php echo BASE_URL; ?>admin/manage_products.php" class="btn btn-outline-success text-start">
                             <i class="fas fa-boxes me-2"></i> المنتجات
                         </a>
-                        <a href="<?php echo BASE_URL; ?>admin/edit_product.php" class="btn btn-outline-success text-start">
-                            <i class="fas fa-edit me-2"></i> تعديل الأرصدة
+                        <a href="<?php echo BASE_URL; ?>admin/add_product.php" class="btn btn-outline-success text-start">
+                            <i class="fas fa-plus me-2"></i>
+                            اضافه منتج جديد للمخزن
                         </a>
                         <a href="<?php echo BASE_URL; ?>admin/stock_report.php" class="btn btn-outline-success text-start">
                             <i class="fas fa-chart-bar me-2"></i> تقارير المخزون
@@ -124,10 +137,18 @@ require_once BASE_DIR . 'partials/sidebar.php';
                             <i class="fas fa-chart-line me-2"></i> تقرير المبيعات
                         </a>
                         <a href="<?php echo BASE_URL; ?>admin/net_profit_report.php" class="btn btn-outline-danger text-start">
-                            <i class="fas fa-funnel-dollar me-2"></i> تقرير الأرباح
+                            <i class="fas fa-funnel-dollar me-2"></i> صافي الارباح
+                        </a>
+                        <a href="<?php echo BASE_URL; ?>admin/gross_profit_report.php" class="btn btn-outline-danger text-start">
+                            <i class="fas fa-funnel-dollar me-2"></i> اجمالي الارباح
                         </a>
                         <a href="<?php echo BASE_URL; ?>admin/stock_valuation_report.php" class="btn btn-outline-danger text-start">
                             <i class="fas fa-balance-scale me-2"></i> تقرير المصروفات
+                        </a>
+
+                         <a href="<?php echo BASE_URL; ?>admin/manage_expense_categories.php" 
+                         class="btn btn-outline-danger text-start">
+                            <i class="fas fa-dollar me-2"></i> اضافه مصروف جديد
                         </a>
                     </div>
                 </div>
@@ -144,9 +165,9 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         <a href="<?php echo BASE_URL; ?>admin/registration_settings.php" class="btn btn-outline-secondary text-start">
                             <i class="fas fa-cog me-2"></i> إعدادات النظام
                         </a>
-                        <a href="<?php echo BASE_URL; ?>admin/manage_expense_categories.php" class="btn btn-outline-secondary text-start">
-                            <i class="fas fa-sliders-h me-2"></i> التخصيصات
-                        </a>
+                       
+
+
                     </div>
                 </div>
             </div>

@@ -5,7 +5,6 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php'; // تأكد من أن هذا المسار صحيح للوصول لـ config.php
 require_once BASE_DIR . 'partials/session_admin.php'; // هذه الصفحة للمدير فقط
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 $selected_group = "";
@@ -108,10 +107,11 @@ if ($stmt_select = $conn->prepare($sql_select)) {
 }
 
 // مسارات لصفحات أخرى
-$view_invoice_page_link = BASE_URL . "invoices_out/view.php"; // افترض أن view.php في مجلد invoices_out
+$view_invoice_page_link = BASE_URL . "invoices_out/view_invoice_detaiels.php"; // افترض أن view.php في مجلد invoices_out
 $edit_invoice_page_link_base = BASE_URL . "invoices_out/edit.php"; // افترض أن edit_invoice.php في مجلد admin
 $delivered_invoices_link = BASE_URL . "admin/delivered_invoices.php"; // افترض أن delivered_invoices.php في مجلد admin
 $current_page_link = htmlspecialchars($_SERVER["PHP_SELF"]);
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <div class="container mt-5 pt-3">

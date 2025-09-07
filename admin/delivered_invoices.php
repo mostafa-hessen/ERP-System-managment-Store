@@ -83,7 +83,7 @@ if ($stmt_select = $conn->prepare($sql_select)) {
 }
 
 // تحديد مسارات الروابط
-$view_invoice_page_link = BASE_URL . "invoices_out/view.php"; // افترض أن view.php في مجلد invoices_out
+$view_invoice_page_link = BASE_URL . "invoices_out/view_invoice_detaiels.php"; // افترض أن view.php في مجلد invoices_out
 $edit_invoice_page_link_base = BASE_URL . "invoices_out/edit.php"; // افترض أن edit_invoice.php في مجلد admin
 $pending_invoices_link = BASE_URL . "admin/pending_invoices.php"; // افترض أن pending_invoices.php في مجلد admin
 $current_page_link = htmlspecialchars($_SERVER["PHP_SELF"]); // أو المسار الصحيح إذا كانت الصفحة داخل مجلد admin

@@ -118,7 +118,7 @@ if ($stmt_select = $conn->prepare($sql_select)) {
     $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام جلب الفواتير: " . $conn->error . "</div>";
 }
 
-$view_invoice_page_link = BASE_URL . "invoices_out/view.php";
+$view_invoice_page_link = BASE_URL . "invoices_out/create_invoice.php";
 $current_page_link = htmlspecialchars($_SERVER["PHP_SELF"]);
 
 
