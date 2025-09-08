@@ -1,183 +1,298 @@
+/* ========== Scoped to this page only ========== */
+.welcome {
+  /* ensure RTL natural flow */
+  direction: rtl;
+}
 
-/* البطاقات */
-.dashboard-card {
-  border: none;
+/* Header & quick actions */
+.welcome .header-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.welcome .header-hero h1 { margin:0; font-size:1.4rem; }
+
+/* quick actions: make buttons consistent and responsive */
+.welcome .quick-actions,
+.welcome .card .d-flex {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.welcome .btn-action {
   border-radius: 10px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-  transition: transform 0.3s, box-shadow 0.3s;
+  padding: 10px 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow-1);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.welcome .btn-action:active { transform: translateY(1px); }
+
+/* Stats grid: tighter & consistent */
+.welcome .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
   margin-bottom: 20px;
-  overflow: hidden;
+  align-items: start;
 }
 
-.dashboard-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
-}
-.dashboard-card .card-header {
-  background: linear-gradient(135deg, #6a11cb, #2575fc); /* تدرج جذاب */
-  color: #fff;
-  font-weight: bold;
-  border: none;
-  padding: 15px 20px;
-  font-size: 1.1rem;
-  letter-spacing: 0.5px;
-  box-shadow: inset 0 -2px 5px rgba(255, 255, 255, 0.2); /* لمعان داخلي */
-  position: relative;
+/* Stat card: vertical layout (عكودي) */
+.welcome .stat-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-1);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;      /* make vertical */
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 140px;           /* uniform height */
+  transition: transform var(--fast);
+  color: inherit;
 }
 
-/* خط زخرفي تحت الهيدر
-.dashboard-card .card-header::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 20px;
-  width: 60px;
-  height: 3px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.6);
-} */
-
-.stat-card {
+/* content inside card */
+.welcome .stat-card .stat-left {
+  display: flex;
+  flex-direction: column;      /* icon above text */
+  align-items: center;
+  gap: 10px;
   text-align: center;
-  padding: 20px;
-  border-radius: 10px;
-  color: white;
-  margin-bottom: 20px;
 }
-
-.stat-card i {
-  font-size: 2.5rem;
-  margin-bottom: 10px;
-}
-
-.stat-card .number {
-  font-size: 1.8rem;
-  font-weight: bold;
-}
-
-.stat-card .label {
-  font-size: 0.9rem;
-  opacity: 0.9;
-}
-
-/* الأزرار */
-.btn-action {
-  border-radius: 8px;
-  padding: 10px 15px;
-  margin: 5px;
-  font-weight: 500;
-  transition: all 0.3s;
+.welcome .stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.06);
 }
 
-.btn-action i {
-  margin-left: 5px;
+/* body text */
+.welcome .stat-body {
+  text-align: center;
+}
+.welcome .stat-body .label {
+  color: var(--muted);
+  font-size: 13px;
+  display: block;
+}
+.welcome .stat-body .value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  margin-top: 4px;
 }
 
-/* الشبكات */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 15px;
-  margin-bottom: 25px;
+/* highlight for low stock */
+.welcome .stat-card.low {
+  border-color: rgba(239, 68, 68, 0.12);
+  box-shadow: 0 12px 30px rgba(239, 68, 68, 0.06);
 }
 
-.category-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
-}
-
-/* البحث السريع */
-.quick-search {
-  position: relative;
-  margin-bottom: 25px;
-}
-
-.quick-search input {
-  border-radius: 50px;
-  padding: 12px 20px;
-  border: 1px solid #ddd;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
-}
-
-.quick-search .btn {
-  position: absolute;
-  left: 5px;
-  top: 5px;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
+/* make the small "عرض / تقرير / تفاصيل" link look like a neat button without changing HTML */
+.welcome .stat-card > div:last-child {
   display: flex;
+  justify-content: center; /* center action */
+  align-items: center;
+  margin-top: auto;
+}
+.welcome .stat-card > div:last-child a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.06);
+  background: rgba(255,255,255,0.03);
+  text-decoration: none;
+  font-size: 0.9rem;
+  color: var(--muted);
+  transition: background .12s ease, transform .08s ease;
+}
+.welcome .stat-card > div:last-child a:hover {
+  background: rgba(255,255,255,0.06);
+  transform: translateY(-2px);
+  color: var(--text);
+}
+
+/* Low chips layout inside card */
+.welcome .stat-card .low-chip {
+  margin: 6px 4px 0 4px;
+  display: inline-block;
+}
+
+/* Low table styling (scoped) */
+.welcome .low-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+  background: transparent;
+}
+.welcome .low-table th,
+.welcome .low-table td {
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid rgba(2, 6, 23, 0.06);
+}
+.welcome .low-table tr.low-row {
+  background: linear-gradient(90deg, rgba(255,240,240,0.9), rgba(255,248,248,0.95));
+  color: var(--rose);
+  font-weight: 700;
+}
+
+/* Categories grid: uniform card heights and alignment */
+.welcome .category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.welcome .dashboard-card { height: 100%; display:flex; flex-direction:column; }
+.welcome .dashboard-card .card-body { flex: 1 1 auto; display:flex; align-items:flex-start; }
+
+/* Buttons inside category cards stretch nicely */
+.welcome .dashboard-card .card-body .d-grid { width:100%; display:grid; gap:10px; }
+
+/* responsive tweaks */
+@media (max-width: 800px) {
+  .welcome .stat-card { min-height: 120px; padding:12px; }
+  .welcome .stat-icon { width:48px; height:48px; font-size:18px; border-radius:10px; }
+  .welcome .stat-body .value { font-size:18px; }
+}
+
+/* small helper: keep all welcome-specific tweaks nested to avoid global conflicts */
+/* ====== Scoped fixes for stats/cards (paste into welcome.css) ====== */
+.welcome { direction: rtl; }
+
+/* remove old horizontal layout and force vertical cards */
+.welcome .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+  align-items: start;
+}
+
+/* unified stat card: vertical flow */
+.welcome .stat-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-1);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;    /* vertical */
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 140px;         /* uniform heights */
+  transition: transform var(--fast), box-shadow .12s ease;
+  color: inherit;
+  text-align: center;
+}
+
+/* hover lift */
+.welcome .stat-card:hover { transform: translateY(-6px); }
+
+/* icon above, centered */
+.welcome .stat-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+/* icon size & shape */
+.welcome .stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: #fff;
+  font-size: 20px;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.06);
 }
 
-/* تأثيرات متنوعة */
-.fade-in {
-  animation: fadeIn 0.5s ease-in-out;
+/* body text centered */
+.welcome .stat-body { text-align: center; min-width: 0; }
+.welcome .stat-body .label { color: var(--muted); font-size: 13px; display:block; }
+.welcome .stat-body .value { font-size: 20px; font-weight:800; color:var(--text); margin-top:4px; }
+
+/* low stock emphasis */
+.welcome .stat-card.low {
+  border-color: rgba(239,68,68,0.12);
+  box-shadow: 0 12px 30px rgba(239,68,68,0.06);
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* small chips inside stat-card */
+.welcome .low-chip {
+  margin: 6px 4px 0 4px;
+  display:inline-block;
+  padding:6px 8px;
+  border-radius:8px;
+  font-weight:700;
+  font-size:13px;
 }
 
-/* وسائط متجاوبة */
-@media (max-width: 992px) {
-  .sidebar {
-    right: -var(--sidebar-width);
-    width: var(--sidebar-width);
-  }
-
-  .sidebar.show {
-    right: 0;
-  }
-
-  .main-content {
-    margin-right: 0;
-  }
-
-  .sidebar-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-  }
-
-  .sidebar-overlay.show {
-    display: block;
-  }
+/* turn the small text links into neat pill buttons without changing HTML */
+.welcome .stat-card > div:last-child {
+  width:100%;
+  display:flex;
+  justify-content:center;
+  margin-top:8px;
+}
+.welcome .stat-card > div:last-child a {
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:999px;
+  border:1px solid rgba(0,0,0,0.06);
+  background:transparent;
+  text-decoration:none;
+  font-size:0.92rem;
+  color:var(--muted);
+  transition: background .12s ease, transform .08s ease, color .12s;
+}
+.welcome .stat-card > div:last-child a:hover {
+  background: rgba(255,255,255,0.04);
+  transform: translateY(-3px);
+  color: var(--text);
 }
 
-/* تخصيص لون لكل فئة */
-.category-sales {
-  background: linear-gradient(135deg, #3498db, #2980b9);
+/* category cards: make them equal height and body buttons full-width nicely */
+.welcome .category-grid {
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap:20px;
+  align-items:start;
 }
-.category-inventory {
-  background: linear-gradient(135deg, #27ae60, #219653);
-}
-.category-purchases {
-  background: linear-gradient(135deg, #f39c12, #e67e22);
-}
-.category-finance {
-  background: linear-gradient(135deg, #9b59b6, #8e44ad);
-}
-.category-reports {
-  background: linear-gradient(135deg, #e74c3c, #c0392b);
-}
-.category-settings {
-  background: linear-gradient(135deg, #7f8c8d, #636e72);
+.welcome .dashboard-card { height:100%; display:flex; flex-direction:column; }
+.welcome .dashboard-card .card-body { flex:1 1 auto; display:flex; align-items:flex-start; }
+.welcome .dashboard-card .card-body .d-grid { width:100%; display:grid; gap:10px; }
+
+/* low table fine tuning */
+.welcome .low-table { width:100%; border-collapse:collapse; margin-top:12px; font-size:14px; }
+.welcome .low-table th, .welcome .low-table td { padding:8px 10px; text-align:right; border-bottom:1px solid rgba(2,6,23,0.06); }
+.welcome .low-table th { color:var(--muted); font-weight:700; font-size:13px; }
+
+/* responsive */
+@media (max-width:800px) {
+  .welcome .stat-card { min-height:120px; padding:12px; }
+  .welcome .stat-icon { width:48px; height:48px; font-size:18px; border-radius:10px; }
+  .welcome .stat-body .value { font-size:18px; }
 }

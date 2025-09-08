@@ -22,12 +22,12 @@
 .invoice-out .columns {
   display: grid;
   gap: 12px;
-  /* grid-template-columns: repeat(auto-fit , minmax(350px ,1fr));
-   */
-     grid-template-columns: 1fr 2fr 1fr; /* العمود التاني ضعف حجم الباقي */
-     /* grid-template-rows:repeat(80vh) ; */
+ 
+     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+margin: 10px;
 
 }
+
 .invoice-out .col {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -402,3 +402,4 @@
     width: 100%;
   }
 }
+

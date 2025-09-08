@@ -1,4 +1,4 @@
-<?php
+<!-- <?php
 $page_title = "استعراض العملاء"; // تحديد عنوان الصفحة
 $class1 = "active";
 require_once dirname(__DIR__) . '/config.php';
@@ -235,4 +235,4 @@ require_once BASE_DIR . 'partials/sidebar.php';
 </div>
 
 <?php $conn->close();?>
-<?php require_once BASE_DIR . 'partials/footer.php'; ?>
+<?php require_once BASE_DIR . 'partials/footer.php'; ?> -->

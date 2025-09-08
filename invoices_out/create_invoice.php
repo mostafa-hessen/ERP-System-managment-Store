@@ -1,7 +1,7 @@
 <?php
 // invoices_out/view.php
-// إصدار مُحدَّث: تحديث رقم الفاتورة المتوقع بعد الإتمام، تصحيح عرض التاريخ (تجنّب 1970)، إصلاح مودال إضافة العميل، تحسين تنسيق جدول البنود.
-// تذكير: خذ نسخة احتياطية قبل الاستبدال.
+// إصدار مُحدَّث: إصلاحات create_customer bind_param، منع إضافة منتجات منتهية الرصيد، تفريغ نموذج الإضافة، تحديث المخزون في الواجهة بعد الإتمام، شرح location.pathname usage.
+// خذ نسخة احتياطية قبل الاستبدال.
 
 $page_title = "تفاصيل الفاتورة - كاشير سريع";
 $page_css = "invoice_out.css";
@@ -126,9 +126,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt->close();
     }
     $created_by = $_SESSION['id'] ?? 0;
+    // <-- FIX: correct bind types: 4 strings then integer -> "ssssi"
     $stmt = $conn->prepare("INSERT INTO customers (name,mobile,city,address,created_by,created_at) VALUES (?, ?, ?, ?, ?, NOW())");
     if (!$stmt) { echo json_encode(['ok'=>false,'msg'=>'DB prepare error']); exit; }
-    $stmt->bind_param("sssii", $name, $mobile, $city, $address, $created_by);
+    $stmt->bind_param("ssssi", $name, $mobile, $city, $address, $created_by);
     if (!$stmt->execute()) { echo json_encode(['ok'=>false,'msg'=>'فشل الإنشاء: '.$stmt->error]); $stmt->close(); exit; }
     $new_id = $stmt->insert_id; $stmt->close();
     $stmt2 = $conn->prepare("SELECT id,name,mobile,city,address FROM customers WHERE id = ? LIMIT 1"); $stmt2->bind_param("i",$new_id); $stmt2->execute(); $row = $stmt2->get_result()->fetch_assoc(); $stmt2->close();
@@ -222,50 +223,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_complete'])) 
             $notes = trim($notes . "\n(عميل نقدي)");
         }
 
-        // if ($has_notes_col) {
-        //     $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, notes) VALUES (?, ?, ?, ?, NOW(), ?)");
-        //     if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-        //     $created_by = $_SESSION['id'] ?? 0;
-        //     $stmt->bind_param("issis", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $notes);
-        // } else {
-        //     $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at) VALUES (?, ?, ?, ?, NOW())");
-        //     if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-        //     $created_by = $_SESSION['id'] ?? 0;
-        //     $stmt->bind_param("issi", $posted_customer_id, $delivered_value, $invoice_group, $created_by);
-        // }
-
-
        // ----------------- replace existing INSERT block with this ده لان مكنش بيبعت بيانات التسليم اذا كانت نقدي -----------------
-$created_by = $_SESSION['id'] ?? 0;
-$updated_by = ($delivered_value === 'yes') ? $created_by : null;
+        $created_by = $_SESSION['id'] ?? 0;
+        $updated_by = ($delivered_value === 'yes') ? $created_by : null;
 
-if ($has_notes_col) {
-    if ($delivered_value === 'yes') {
-        // set updated_at on insert so the invoice shows under updated_at immediately
-        $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, updated_by, updated_at, notes) VALUES (?, ?, ?, ?, NOW(), ?, NOW(), ?)");
-        if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-        // types: i (customer_id), s (delivered), s (invoice_group), i (created_by), i (updated_by), s (notes)
-        $stmt->bind_param("issiis", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $updated_by, $notes);
-    } else {
-        $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, notes) VALUES (?, ?, ?, ?, NOW(), ?)");
-        if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-        $stmt->bind_param("issis", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $notes);
-    }
-} else {
-    if ($delivered_value === 'yes') {
-        $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, NOW(), ?, NOW())");
-        if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-        $stmt->bind_param("issii", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $updated_by);
-    } else {
-        $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at) VALUES (?, ?, ?, ?, NOW())");
-        if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-        $stmt->bind_param("issi", $posted_customer_id, $delivered_value, $invoice_group, $created_by);
-    }
-}
-       // -----------------end replace existing INSERT block with this ده لان مكنش بيبعت بيانات التسليم اذا كانت نقدي -----------------
- 
-
-
+        if ($has_notes_col) {
+            if ($delivered_value === 'yes') {
+                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, updated_by, updated_at, notes) VALUES (?, ?, ?, ?, NOW(), ?, NOW(), ?)");
+                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
+                $stmt->bind_param("issiis", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $updated_by, $notes);
+            } else {
+                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, notes) VALUES (?, ?, ?, ?, NOW(), ?)");
+                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
+                $stmt->bind_param("issis", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $notes);
+            }
+        } else {
+            if ($delivered_value === 'yes') {
+                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, NOW(), ?, NOW())");
+                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
+                $stmt->bind_param("issii", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $updated_by);
+            } else {
+                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at) VALUES (?, ?, ?, ?, NOW())");
+                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
+                $stmt->bind_param("issi", $posted_customer_id, $delivered_value, $invoice_group, $created_by);
+            }
+        }
+       // -----------------end replace existing INSERT block -----------------
 
         if (!$stmt->execute()) throw new Exception("تنفيذ إدخال الفاتورة فشل: " . $stmt->error);
         $new_invoice_id = $stmt->insert_id; $stmt->close();
@@ -303,6 +286,16 @@ if ($has_notes_col) {
 require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/sidebar.php';
 ?>
+
+<style>
+  
+/* بسيط لعرض الحالة: out-of-stock */
+.invoice-out  .product-item.out-of-stock { opacity: 0.6; filter: grayscale(30%); pointer-events: none; }
+.invoice-out  .product-item .badge-out { background:#c00; color:#fff; padding:2px 6px; border-radius:6px; font-size:12px; margin-top:6px; display:inline-block; }
+.invoice-out  tr.insufficient { background: #ffecec; }
+.invoice-out  .stock-warn { color:#a00; font-size:12px; margin-top:6px; }
+
+</style>
 <div class="invoice-out">
   
  <div id="topMsg" role="status"></div>
@@ -396,8 +389,10 @@ require_once BASE_DIR . 'partials/sidebar.php';
           <input type="text" id="product_search" placeholder="بحث باسم أو كود..." style="padding:6px;border:1px solid #ddd;border-radius:6px;width:55%">
         </div>
         <div id="product_list">
-          <?php foreach($products_list as $p): ?>
-            <div class="product-item" data-id="<?php echo (int)$p['id']; ?>"
+          <?php foreach($products_list as $p):
+            $out = floatval($p['current_stock']) <= 0 ? ' out-of-stock' : '';
+          ?>
+            <div class="product-item<?php echo $out; ?>" data-id="<?php echo (int)$p['id']; ?>"
                  data-name="<?php echo e($p['name']); ?>"
                  data-code="<?php echo e($p['product_code']); ?>"
                  data-price="<?php echo floatval($p['selling_price']); ?>"
@@ -405,9 +400,14 @@ require_once BASE_DIR . 'partials/sidebar.php';
                  data-stock="<?php echo floatval($p['current_stock']); ?>">
               <div>
                 <div style="font-weight:700"><?php echo e($p['name']); ?></div>
-                <div class="small-muted">كود: <?php echo e($p['product_code']); ?> — رصيد: <?php echo e($p['current_stock']); ?></div>
+                <div class="small-muted">كود: <?php echo e($p['product_code']); ?> — رصيد: <span class="stock-number"><?php echo e($p['current_stock']); ?></span></div>
               </div>
-              <div style="text-align:left;font-weight:700"><?php echo number_format($p['selling_price'],2); ?> ج.م</div>
+              <div style="text-align:left;font-weight:700">
+                <?php echo number_format($p['selling_price'],2); ?> ج.م
+                <?php if(floatval($p['current_stock']) <= 0): ?>
+                  <div class="badge-out">نفذ</div>
+                <?php endif; ?>
+              </div>
             </div>
           <?php endforeach; ?>
         </div>
@@ -541,7 +541,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
   </div>
 </div>
 
-</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function(){
@@ -555,33 +554,6 @@ document.addEventListener('DOMContentLoaded', function(){
     topMsg.textContent = text; topMsg.style.display = 'block';
     if (timeout>0) setTimeout(()=>{ topMsg.style.display = 'none'; }, timeout);
   }
-
-
-  // Toast system instead of topMsg
-// function showTopMsg(type, message, timeout = 5000) {
-//   let container = document.querySelector('.toast-container');
-//   if (!container) {
-//     container = document.createElement('div');
-//     container.className = 'toast-container';
-//     document.body.appendChild(container);
-//   }
-
-//   const toast = document.createElement('div');
-//   toast.className = `toast ${type}`;
-//   toast.textContent = message;
-
-//   container.appendChild(toast);
-
-//   // Auto remove
-//   setTimeout(() => {
-//     toast.style.animation = 'toastFadeOut 0.5s forwards';
-//     toast.addEventListener('animationend', () => toast.remove());
-//   }, timeout);
-
-//   // Remove on click
-//   toast.addEventListener('click', () => toast.remove());
-// }
-
 
   const customerListEl = document.getElementById('customer_list');
   const customerSearch = document.getElementById('customer_search');
@@ -610,11 +582,37 @@ document.addEventListener('DOMContentLoaded', function(){
   const CASH_CUSTOMER_ID = <?php echo json_encode(intval($CASH_CUSTOMER_ID)); ?>;
   const CASH_CUSTOMER_NAME = <?php echo json_encode($CASH_CUSTOMER_NAME); ?>;
 
-  // products add
+  // Helper to render stock number and out-of-stock class
+  function renderProductStock(p) {
+    try {
+      const stockEl = p.el.querySelector('.stock-number');
+      if (stockEl) stockEl.textContent = String(p.stock);
+      if (p.stock <= 0) {
+        p.el.classList.add('out-of-stock');
+        if (!p.el.querySelector('.badge-out')) {
+          const div = document.createElement('div'); div.className='badge-out'; div.textContent='نفذ'; p.el.appendChild(div);
+        }
+      } else {
+        p.el.classList.remove('out-of-stock');
+        const badge = p.el.querySelector('.badge-out'); if (badge) badge.remove();
+      }
+      p.el.dataset.stock = p.stock;
+    } catch(e){ console.error(e); }
+  }
+
+  // initial render for stocks
+  productList.forEach(p=> renderProductStock(p));
+
+  // products add - block clicks on out-of-stock
   document.getElementById('product_list').addEventListener('click', function(e){
     const p = e.target.closest('.product-item'); if (!p) return;
-    const pid = parseInt(p.dataset.id,10); addOrIncreaseItem(pid);
+    const pid = parseInt(p.dataset.id,10);
+    const prod = productList.find(x=> x.id === pid);
+    if (!prod) return;
+    if (prod.stock <= 0) { showTopMsg('error','المنتج غير متاح (الرصيد صفر).',3000); return; }
+    addOrIncreaseItem(pid);
   });
+
   const productSearch = document.getElementById('product_search');
   productSearch?.addEventListener('input', debounce(e=>{
     const q = e.target.value.trim().toLowerCase();
@@ -624,6 +622,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function addOrIncreaseItem(pid, qty=1) {
     const p = productList.find(x=>x.id===pid);
     if (!p) return;
+    if (p.stock <= 0) { showTopMsg('error','لا يمكن إضافة هذا المنتج — نفذ',3000); return; }
     const existing = Array.from(itemsBody.querySelectorAll('tr')).find(r=> parseInt(r.dataset.productId||0,10) === pid );
     if (existing) {
       const qel = existing.querySelector('.qty'); qel.value = (parseFloat(qel.value)||0) + qty; checkRowStock(existing, p.stock); recalcTotals(); return;
@@ -681,6 +680,7 @@ document.addEventListener('DOMContentLoaded', function(){
     customerListEl.innerHTML = '<div class="small-muted">تحميل...</div>';
     try {
       const params = new URLSearchParams({action:'search_customers', q});
+      // Using location.pathname sends request to the same script file (path only), which is acceptable for this in-page AJAX.
       const res = await fetch(location.pathname + '?' + params.toString());
       const data = await res.json();
       if (!data.ok){ customerListEl.innerHTML = '<div class="small-muted">خطأ في التحميل</div>'; return; }
@@ -766,121 +766,68 @@ document.addEventListener('DOMContentLoaded', function(){
     });
   }
 
-  // Modal open/close (robust: class + style)
-  // if (openAddBtn && modalAdd && closeAddBtn && submitAddBtn) {
-  //   openAddBtn.addEventListener('click', ()=> { modalAdd.classList.add('open'); modalAdd.style.display='flex'; modalAdd.setAttribute('aria-hidden','false'); });
-  //   closeAddBtn.addEventListener('click', ()=> { modalAdd.classList.remove('open'); modalAdd.style.display='none'; modalAdd.setAttribute('aria-hidden','true'); });
-  //   submitAddBtn.addEventListener('click', async function(){
-  //     const name = document.getElementById('new_name').value.trim();
-  //     const mobile = document.getElementById('new_mobile').value.trim();
-  //     const city = document.getElementById('new_city').value.trim();
-  //     const address = document.getElementById('new_address').value.trim();
-  //     const msg = document.getElementById('addCustMsg'); msg.innerHTML = '';
-  //     if (!name) { msg.innerHTML = '<div style="color:#a00">الاسم مطلوب</div>'; return; }
-  //     if (mobile && !/^[0-9]{11}$/.test(mobile)) { msg.innerHTML = '<div style="color:#a00">الموبايل يجب أن يتكون من 11 رقماً</div>'; return; }
-  //     const form = new FormData(); form.append('action','create_customer'); form.append('csrf_token', csrf);
-  //     form.append('name', name); form.append('mobile', mobile); form.append('city', city); form.append('address', address);
-  //     try {
-  //       const res = await fetch(location.pathname, { method:'POST', body: form });
-  //       const data = await res.json();
-  //       if (!data.ok) { msg.innerHTML = '<div style="color:#a00">'+escapeHtml(data.msg || 'خطأ')+'</div>'; return; }
-  //       modalAdd.classList.remove('open'); modalAdd.style.display='none'; modalAdd.setAttribute('aria-hidden','true');
-  //       await loadCustomers('');
-  //       setTimeout(()=> {
-  //         const createdEl = Array.from(document.querySelectorAll('#customer_list .customer-item')).find(ci=> ci.dataset.cid == data.customer.id);
-  //         if (createdEl) createdEl.querySelector('.choose-cust').click();
-  //       }, 200);
-  //     } catch(err) {
-  //       msg.innerHTML = '<div style="color:#a00">خطأ في الاتصال</div>';
-  //     }
-  //   });
-  // }
-
-  // جزء اضافه عميل بعد التعديل
-
+  // Add customer modal behavior (improved and clear inputs after success)
   if (openAddBtn && modalAdd && closeAddBtn && submitAddBtn) {
-  // فتح المودال
-  openAddBtn.addEventListener('click', ()=> { 
-    modalAdd.classList.add('open'); 
-    modalAdd.style.display='flex'; 
-    modalAdd.setAttribute('aria-hidden','false'); 
-  });
+    openAddBtn.addEventListener('click', ()=> {
+      modalAdd.classList.add('open'); modalAdd.style.display='flex'; modalAdd.setAttribute('aria-hidden','false');
+      document.getElementById('addCustMsg').innerHTML = '';
+    });
 
-  // غلق المودال
-  closeAddBtn.addEventListener('click', ()=> { 
-    modalAdd.classList.remove('open'); 
-    modalAdd.style.display='none'; 
-    modalAdd.setAttribute('aria-hidden','true'); 
-  });
+    closeAddBtn.addEventListener('click', ()=> {
+      modalAdd.classList.remove('open'); modalAdd.style.display='none'; modalAdd.setAttribute('aria-hidden','true');
+    });
 
-  // الحفظ
-  submitAddBtn.addEventListener('click', async function(){
-    const name    = document.getElementById('new_name').value.trim();
-    const mobile  = document.getElementById('new_mobile').value.trim();
-    const city    = document.getElementById('new_city').value.trim();
-    const address = document.getElementById('new_address').value.trim();
-    const msg     = document.getElementById('addCustMsg'); 
-    msg.innerHTML = '';
+    submitAddBtn.addEventListener('click', async function(){
+      const name    = document.getElementById('new_name').value.trim();
+      const mobile  = document.getElementById('new_mobile').value.trim();
+      const city    = document.getElementById('new_city').value.trim();
+      const address = document.getElementById('new_address').value.trim();
+      const msg     = document.getElementById('addCustMsg');
+      msg.innerHTML = '';
 
-    // 🔹 فالديشن محلي
-    if (!name || name.length < 3) { 
-      msg.innerHTML = '<div style="color:#a00">❌ الاسم مطلوب ويجب أن يكون 3 حروف على الأقل</div>'; 
-      return; 
-    }
+      if (!name || name.length < 3) { msg.innerHTML = '<div style="color:#a00">❌ الاسم مطلوب ويجب أن يكون 3 حروف على الأقل</div>'; return; }
+      if (!/^(01[0-9]{9})$/.test(mobile)) { msg.innerHTML = '<div style="color:#a00">❌ الموبايل يجب أن يبدأ بـ 01 ويتكون من 11 رقماً</div>'; return; }
+      if (!city) { msg.innerHTML = '<div style="color:#a00">❌ المدينة مطلوبة</div>'; return; }
+      if (!address || address.length < 5) { msg.innerHTML = '<div style="color:#a00">❌ العنوان يجب أن يكون أوضح (5 حروف على الأقل)</div>'; return; }
 
-    if (!/^(01[0-9]{9})$/.test(mobile)) { 
-      msg.innerHTML = '<div style="color:#a00">❌ الموبايل يجب أن يبدأ بـ 01 ويتكون من 11 رقماً</div>'; 
-      return; 
-    }
+      const form = new FormData();
+      form.append('action','create_customer');
+      form.append('csrf_token', csrf);
+      form.append('name', name);
+      form.append('mobile', mobile);
+      form.append('city', city);
+      form.append('address', address);
 
-    if (!city) {
-      msg.innerHTML = '<div style="color:#a00">❌ المدينة مطلوبة</div>'; 
-      return; 
-    }
+      try {
+        const res = await fetch(location.pathname, { method:'POST', body: form });
+        const data = await res.json();
+        if (!data.ok) { msg.innerHTML = '<div style="color:#a00">'+escapeHtml(data.msg || '⚠ حدث خطأ في الحفظ')+'</div>'; return; }
 
-    if (!address || address.length < 5) {
-      msg.innerHTML = '<div style="color:#a00">❌ العنوان يجب أن يكون أوضح (5 حروف على الأقل)</div>'; 
-      return; 
-    }
+        showTopMsg("success","تم اضافه عميل بنجاح");
+        // close modal
+        modalAdd.classList.remove('open'); modalAdd.style.display='none'; modalAdd.setAttribute('aria-hidden','true');
 
-    // 🔹 تجهيز البيانات للإرسال
-    const form = new FormData(); 
-    form.append('action','create_customer'); 
-    form.append('csrf_token', csrf);
-    form.append('name', name); 
-    form.append('mobile', mobile); 
-    form.append('city', city); 
-    form.append('address', address);
+        // clear inputs so next time modal is empty
+        document.getElementById('new_name').value = '';
+        document.getElementById('new_mobile').value = '';
+        document.getElementById('new_city').value = '';
+        document.getElementById('new_address').value = '';
 
-    try {
-      const res = await fetch(location.pathname, { method:'POST', body: form });
-      const data = await res.json();
+        await loadCustomers('');
 
-      if (!data.ok) { 
-        msg.innerHTML = '<div style="color:#a00">'+escapeHtml(data.msg || '⚠ حدث خطأ في الحفظ')+'</div>'; 
-        return; 
+        // select the created customer
+        setTimeout(()=> {
+          const createdEl = Array.from(document.querySelectorAll('#customer_list .customer-item'))
+            .find(ci=> ci.dataset.cid == data.customer.id);
+          if (createdEl) createdEl.querySelector('.choose-cust').click();
+        }, 200);
+
+      } catch(err) {
+        msg.innerHTML = '<div style="color:#a00">🚫 خطأ في الاتصال بالخادم</div>';
+        console.error(err);
       }
-
-      showTopMsg("success","تم اضافه عميل بنجاح")
-      // نجاح
-      modalAdd.classList.remove('open'); 
-      modalAdd.style.display='none'; 
-      modalAdd.setAttribute('aria-hidden','true');
-
-      await loadCustomers('');
-
-      // تحديد العميل الجديد أوتوماتيك
-      setTimeout(()=> {
-        const createdEl = Array.from(document.querySelectorAll('#customer_list .customer-item'))
-          .find(ci=> ci.dataset.cid == data.customer.id);
-        if (createdEl) createdEl.querySelector('.choose-cust').click();
-      }, 200);
-
-    } catch(err) {
-      msg.innerHTML = '<div style="color:#a00">🚫 خطأ في الاتصال بالخادم</div>';
-    }
-  });
-}
+    });
+  }
 
   // close modals on backdrop click
   document.querySelectorAll('.modal-backdrop').forEach(mb=> mb.addEventListener('click', function(ev){ if (ev.target === mb) { mb.classList.remove('open'); mb.style.display='none'; mb.setAttribute('aria-hidden','true'); } }));
@@ -893,99 +840,68 @@ document.addEventListener('DOMContentLoaded', function(){
     recalcTotals();
   });
 
-  // confirm open: populate previews
-  // openConfirmBtn?.addEventListener('click', function(){
-  //   const custId = parseInt(customerIdInput.value||0,10);
-  //   if (!custId) { showTopMsg('error','يجب اختيار عميل قبل الإتمام', 3500); return; }
-  //   const rows = Array.from(itemsBody.querySelectorAll('tr')).filter(r=> r.id!=='no-items-row');
-  //   if (rows.length===0) { showTopMsg('error','لا توجد بنود لإتمام الفاتورة', 3500); return; }
-  //   let clientHtml = '<div><strong>العميل:</strong> ';
-  //   if (custId === CASH_CUSTOMER_ID) {
-  //     clientHtml += escapeHtml(CASH_CUSTOMER_NAME || 'عميل نقدي');
-  //   } else {
-  //     const selected = Array.from(document.querySelectorAll('#customer_list .customer-item')).find(ci => parseInt(ci.dataset.cid||0,10) === custId);
-  //     if (selected) clientHtml += selected.querySelector('div > div').innerText; else clientHtml += 'معرّف #' + escapeHtml(String(custId));
-  //   }
-  //   clientHtml += '</div>';
-  //   document.getElementById('confirmClientPreview').innerHTML = clientHtml;
-
-  //   const preview = document.getElementById('confirmItemsPreview'); preview.innerHTML = '';
-  //   rows.forEach(r=>{
-  //     const name = r.querySelector('td').innerText.trim(); const qty = r.querySelector('.qty').value; const up = r.querySelector('.unit-price').value;
-  //     const line = parseFloat(qty) * parseFloat(up);
-  //     const div = document.createElement('div'); div.style.display='flex'; div.style.justifyContent='space-between'; div.style.padding='6px 0';
-  //     div.innerHTML = `<div><strong>${escapeHtml(name)}</strong><div class="small-muted">الكمية: ${qty} — سعر البيع: ${parseFloat(up).toFixed(2)}</div></div><div>${line.toFixed(2)}</div>`;
-  //     preview.appendChild(div);
-  //   });
-  //   document.getElementById('confirm_total_before').textContent = document.getElementById('total_before').textContent;
-  //   modalConfirm.classList.add('open'); modalConfirm.style.display='flex'; modalConfirm.setAttribute('aria-hidden','false');
-  // });
-
+  // Confirm modal open (existing)
   openConfirmBtn?.addEventListener('click', function () {
-  const custId = parseInt(customerIdInput.value || 0, 10);
-  if (!custId) {
-    showTopMsg('error', 'يجب اختيار عميل قبل الإتمام', 3500);
-    return;
-  }
-  const rows = Array.from(itemsBody.querySelectorAll('tr')).filter(r => r.id !== 'no-items-row');
-  if (rows.length === 0) {
-    showTopMsg('error', 'لا توجد بنود لإتمام الفاتورة', 3500);
-    return;
-  }
+    const custId = parseInt(customerIdInput.value || 0, 10);
+    if (!custId) { showTopMsg('error', 'يجب اختيار عميل قبل الإتمام', 3500); return; }
+    const rows = Array.from(itemsBody.querySelectorAll('tr')).filter(r => r.id !== 'no-items-row');
+    if (rows.length === 0) { showTopMsg('error', 'لا توجد بنود لإتمام الفاتورة', 3500); return; }
 
-  // ✅ معاينة العميل
-  let clientHtml = `<div class="cust-preview">`;
-  if (custId === CASH_CUSTOMER_ID) {
-    clientHtml += `<p><strong>👤 العميل:</strong> ${escapeHtml(CASH_CUSTOMER_NAME || 'عميل نقدي')}</p>`;
-  } else {
-    const selected = Array.from(document.querySelectorAll('#customer_list .customer-item'))
-      .find(ci => parseInt(ci.dataset.cid || 0, 10) === custId);
-    if (selected) {
-      const name = selected.querySelector('div > div').innerText;
-      clientHtml += `<p><strong>👤 العميل:</strong> ${escapeHtml(name)}</p>`;
+    // preview client
+    let clientHtml = `<div class="cust-preview">`;
+    if (custId === CASH_CUSTOMER_ID) {
+      clientHtml += `<p><strong>👤 العميل:</strong> ${escapeHtml(CASH_CUSTOMER_NAME || 'عميل نقدي')}</p>`;
     } else {
-      clientHtml += `<p><strong>👤 العميل:</strong> معرّف #${escapeHtml(String(custId))}</p>`;
+      const selected = Array.from(document.querySelectorAll('#customer_list .customer-item')).find(ci => parseInt(ci.dataset.cid || 0, 10) === custId);
+      if (selected) {
+        const name = selected.querySelector('div > div').innerText;
+        clientHtml += `<p><strong>👤 العميل:</strong> ${escapeHtml(name)}</p>`;
+      } else {
+        clientHtml += `<p><strong>👤 العميل:</strong> معرّف #${escapeHtml(String(custId))}</p>`;
+      }
     }
-  }
-  clientHtml += `</div>`;
-  document.getElementById('confirmClientPreview').innerHTML = clientHtml;
+    clientHtml += `</div>`;
+    document.getElementById('confirmClientPreview').innerHTML = clientHtml;
 
-  // ✅ معاينة البنود
-  const preview = document.getElementById('confirmItemsPreview');
-  preview.innerHTML = '';
-  rows.forEach(r => {
-    const name = r.querySelector('td').innerText.trim();
-    const qty = r.querySelector('.qty').value;
-    const up = r.querySelector('.unit-price').value;
-    const line = parseFloat(qty) * parseFloat(up);
+    // preview items
+    const preview = document.getElementById('confirmItemsPreview'); preview.innerHTML = '';
+    rows.forEach(r => {
+      const name = r.querySelector('td').innerText.trim();
+      const qty = r.querySelector('.qty').value;
+      const up = r.querySelector('.unit-price').value;
+      const line = parseFloat(qty) * parseFloat(up);
 
-    const div = document.createElement('div');
-    div.className = 'modal-item';
-    div.innerHTML = `
-      <div class="item-info">
-        <strong>${escapeHtml(name)}</strong>
-        <div class="small-muted">الكمية: ${qty} — سعر البيع: ${parseFloat(up).toFixed(2)}</div>
-      </div>
-      <div class="item-price">${line.toFixed(2)}</div>
-    `;
-    preview.appendChild(div);
+      const div = document.createElement('div');
+      div.className = 'modal-item';
+      div.innerHTML = `
+        <div class="item-info">
+          <strong>${escapeHtml(name)}</strong>
+          <div class="small-muted">الكمية: ${qty} — سعر البيع: ${parseFloat(up).toFixed(2)}</div>
+        </div>
+        <div class="item-price">${line.toFixed(2)}</div>
+      `;
+      preview.appendChild(div);
+    });
+
+    document.getElementById('confirm_total_before').textContent = document.getElementById('total_before').textContent;
+
+    modalConfirm.classList.add('open'); modalConfirm.style.display='flex'; modalConfirm.setAttribute('aria-hidden','false');
   });
-
-  // ✅ الإجمالي
-  document.getElementById('confirm_total_before').textContent =
-    document.getElementById('total_before').textContent;
-
-  modalConfirm.classList.add('open');
-  modalConfirm.style.display = 'flex';
-  modalConfirm.setAttribute('aria-hidden', 'false');
-});
-
 
   confirmCancel?.addEventListener('click', function(){ modalConfirm.classList.remove('open'); modalConfirm.style.display='none'; modalConfirm.setAttribute('aria-hidden','true'); });
 
-  // Confirm send via AJAX (robust JSON parse); update nextInvoiceId on success
+  // Confirm send via AJAX
   confirmSend?.addEventListener('click', async function(){
     const formEl = document.getElementById('invoiceForm');
+    // build an array of used products so we can update local stock AFTER success
+    const usedProducts = [];
+    Array.from(itemsBody.querySelectorAll('tr')).forEach(r=>{
+      if (r.id==='no-items-row') return;
+      const pid = parseInt(r.dataset.productId||0,10);
+      const qty = parseFloat(r.querySelector('.qty')?.value||0);
+      if (pid && qty) usedProducts.push({product_id: pid, quantity: qty});
+    });
+
     const fd = new FormData(formEl);
     fd.set('confirm_complete','1');
     try {
@@ -1005,6 +921,17 @@ document.addEventListener('DOMContentLoaded', function(){
       if (data && data.ok) {
         modalConfirm.classList.remove('open'); modalConfirm.style.display='none'; modalConfirm.setAttribute('aria-hidden','true');
         showTopMsg('success', data.message || 'تم إتمام الفاتورة', 4000);
+        // update local stocks (decrement)
+        try {
+          usedProducts.forEach(u=>{
+            const p = productList.find(x=> x.id === u.product_id);
+            if (p) {
+              p.stock = Math.max(0, (parseFloat(p.stock)||0) - parseFloat(u.quantity||0));
+              renderProductStock(p);
+            }
+          });
+        } catch(e){ console.error('update local stocks failed', e); }
+
         // clear UI
         document.querySelectorAll('#itemsTableBody tr').forEach(tr=>tr.remove());
         const r = document.createElement('tr'); r.id='no-items-row'; r.innerHTML = '<td colspan="6" class="no-items">لا توجد بنود بعد — اختر منتجاً.</td>'; itemsBody.appendChild(r);
@@ -1015,8 +942,7 @@ document.addEventListener('DOMContentLoaded', function(){
         document.getElementById('notes').value = '';
         document.querySelectorAll('#customer_list .customer-item').forEach(ci=>ci.classList.remove('disabled','selected'));
         document.getElementById('cashCustomerBtn')?.classList.remove('selected');
-        
-        
+
         // update next invoice id shown
         try {
           const nextEl = document.getElementById('nextInvoiceId');
@@ -1027,8 +953,6 @@ document.addEventListener('DOMContentLoaded', function(){
         } catch(e){}
       } else {
         const errs = (data && data.errors) ? data.errors.join(' | ') : (data && data.msg ? data.msg : 'حصل خطأ');
-        console.log(errs);
-        
         showTopMsg('error', 'فشل إتمام الفاتورة: ' + errs, 6000);
       }
     } catch (err) {
@@ -1036,131 +960,75 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   });
 
-//   // // Print (include notes)
-//   btnPrint?.addEventListener('click', function(){
-//     const invoiceTitle = '<?php echo $invoice ? "فاتورة #".intval($invoice['id']) : "فاتورة مؤقتة"; ?>';
-//     const custHtml = document.getElementById('selectedCustomerBox') ? document.getElementById('selectedCustomerBox').innerHTML : '<div>لا يوجد عميل</div>';
-//     let itemsHtml = '<table><thead><tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>';
-//     document.querySelectorAll('#itemsTableBody tr').forEach(tr=>{
-//       if (tr.id==='no-items-row') return;
-//       const name = tr.querySelector('td').innerText.trim();
-//       const qty = tr.querySelector('.qty') ? tr.querySelector('.qty').value : '';
-//       const up = tr.querySelector('.unit-price') ? tr.querySelector('.unit-price').value : '';
-//       const line = tr.querySelector('.line-total') ? tr.querySelector('.line-total').innerText : '';
-//       itemsHtml += `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(qty)}</td><td>${escapeHtml(parseFloat(up||0).toFixed(2))}</td><td>${escapeHtml(line)}</td></tr>`;
-//     });
-//     itemsHtml += '</tbody></table>';
-//     const totBefore = document.getElementById('total_before').textContent || '0.00';
-//     const notes = document.getElementById('notes') ? escapeHtml(document.getElementById('notes').value) : '';
-//     const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>طباعة الفاتورة</title>
-//       <style>body{font-family:Arial;padding:12px} table{width:100%;border-collapse:collapse} th,td{padding:6px;border:1px solid #ccc;text-align:right} h2{margin-top:0}</style></head><body>
-//       <h2>${invoiceTitle}</h2><div>${custHtml}</div><hr>${itemsHtml}<hr>
-//       <div><strong>الإجمالي:</strong> ${totBefore} ج.م</div><div style="margin-top:8px"><strong>ملاحظات:</strong><div>${notes}</div></div>
-//       </body></html>`;
-//     // const w = window.open('',''); w.document.open(); w.document.write(html); w.document.close();
-//     // setTimeout(()=>{ w.print(); w.close(); }, 350);
-//     const iframe = document.createElement('iframe');
-// iframe.style.display = 'none';
-// document.body.appendChild(iframe);
-
-// const doc = iframe.contentWindow.document;
-// doc.open();
-// doc.write(html);
-// doc.close();
-
-// iframe.onload = function() {
-//   iframe.contentWindow.focus();
-//   iframe.contentWindow.print();
-//   document.body.removeChild(iframe);
-// };
-  // });
-
-//   btnPrint?.addEventListener('click', function(){
-//   const iframe = document.createElement('iframe');
-//   iframe.style.display = 'none';
-//   document.body.appendChild(iframe);
-//   const doc = iframe.contentWindow.document;
-//   doc.open();
-//   doc.write(html);
-//   doc.close();
-//   iframe.onload = function(){
-//     iframe.contentWindow.focus();
-//     iframe.contentWindow.print();
-//     document.body.removeChild(iframe);
-//   };
-// });
-
-// طباعه الفاتوره
-
+  // Print (kept same behavior)
+// طباعة — استبدل الـ handler القديم بهذا
 btnPrint?.addEventListener('click', function(){
   const invoiceTitle = '<?php echo $invoice ? "فاتورة #".intval($invoice['id']) : "فاتورة "; ?>';
-  // const custHtml = document.getElementById('selectedCustomerBox') 
-  //   ? document.getElementById('selectedCustomerBox').innerHTML 
-  //   : '<div>لا يوجد عميل</div>';
-
   const custBox = document.getElementById('selectedCustomerBox');
-let custHtml = '<div>لا يوجد عميل</div>';
+  let custHtml = '<div>عميل نقدي</div>'; // default fallback
 
-if (custBox) {
-  const nameLine   = custBox.querySelector('.name')?.innerText || '';
-  const phoneLine  = custBox.querySelector('.phone')?.innerText || '';
-  const addressLine = custBox.querySelector('.adress')?.innerText || 'غير مدرج';
+  // 1) إذا كان العميل هو العميل النقدي الثابت (زر "نقدي (ثابت)" وضع customer_id)
+  const custIdVal = parseInt(customerIdInput.value || 0, 10);
+  if (custIdVal === CASH_CUSTOMER_ID) {
+    custHtml = `<div><div><strong>${escapeHtml(CASH_CUSTOMER_NAME || 'عميل نقدي')}</strong></div></div>`;
+  } else if (custBox) {
+    // 2) حاول استخراج الاسم/الهاتف/العنوان بأكثر من طريقة (مرونة مع تغيّر HTML)
+    let name = (custBox.querySelector('.name')?.innerText || '').trim();
+    let phone = (custBox.querySelector('.phone')?.innerText || '').trim();
+    let address = (custBox.querySelector('.adress')?.innerText || '').trim(); // لاحظ: 'adress' مستخدمة في كودك
 
-  custHtml = `
-    <div>
-      <div><strong>${escapeHtml(nameLine)}</strong> <br/>${escapeHtml(phoneLine)}</div>
-      <div>${escapeHtml(addressLine)}</div>
-    </div>
-  `;
-}
+    // fallback: إذا لم نجد name باستخدام الكلاسات، جرب أول <strong> داخل الصندوق
+    if (!name) name = (custBox.querySelector('strong')?.innerText || '').trim();
 
+    // fallback: حاول إيجاد رقم هاتف داخل نص الـ box (regex بسيط)
+    if (!phone) {
+      const txt = custBox.innerText || '';
+      const m = txt.match(/(01[0-9]{9}|\+?\d{7,15})/);
+      if (m) phone = m[0];
+    }
 
+    // fallback: إذا لم نوجد أي من الحقول، تحقق من نص "العميل الحالي: ... " (مثلاً عند cashBtn)
+    if (!name && /العميل الحالي[:\s]/.test(custBox.innerText)) {
+      // خذ النص بعد "العميل الحالي:"
+      const after = custBox.innerText.split('العميل الحالي:')[1] || '';
+      const parts = after.split('—').map(s=>s.trim()).filter(Boolean);
+      if (parts.length) name = parts[0];
+      if (!phone && parts.length > 1) phone = parts[1];
+    }
+
+    // بناء HTML للعميل إذا وجدنا بيانات فعلية
+    if (name || phone || address) {
+      custHtml = `<div>
+                    <div><strong>${escapeHtml(name)}</strong> ${phone ? `<br/>${escapeHtml(phone)}` : ''}</div>
+                    ${address ? `<div>${escapeHtml(address)}</div>` : ''}
+                  </div>`;
+    } else {
+      // لا بيانات => نستخدم العميل النقدي كـ fallback
+      custHtml = '<div>عميل نقدي</div>';
+    }
+  }
+
+  // بناء جدول البنود كما كان
   let itemsHtml = '<table><thead><tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>';
   document.querySelectorAll('#itemsTableBody tr').forEach(tr=>{
     if (tr.id==='no-items-row') return;
-    const name = tr.querySelector('td').innerText.trim();
+    const name = tr.querySelector('td')?.innerText.trim() || '';
     const qty = tr.querySelector('.qty') ? tr.querySelector('.qty').value : '';
     const up = tr.querySelector('.unit-price') ? tr.querySelector('.unit-price').value : '';
     const line = tr.querySelector('.line-total') ? tr.querySelector('.line-total').innerText : '';
-    itemsHtml += `<tr>
-      <td>${escapeHtml(name)}</td>
-      <td>${escapeHtml(qty)}</td>
-      <td>${escapeHtml(parseFloat(up||0).toFixed(2))}</td>
-      <td>${escapeHtml(line)}</td>
-    </tr>`;
+    itemsHtml += `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(qty)}</td><td>${escapeHtml(parseFloat(up||0).toFixed(2))}</td><td>${escapeHtml(line)}</td></tr>`;
   });
   itemsHtml += '</tbody></table>';
 
-  const totBefore = document.getElementById('total_before').textContent || '0.00';
+  const totBefore = document.getElementById('total_before')?.textContent || '0.00';
   const notes = document.getElementById('notes') ? escapeHtml(document.getElementById('notes').value) : '';
 
-  const html = `
-    <!doctype html>
-    <html dir="rtl" lang="ar">
-    <head>
-      <meta charset="utf-8">
-      <title>طباعة الفاتورة</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 12px; }
-        table { width:100%; border-collapse:collapse; margin-top:12px; }
-        th,td { border:1px solid #ccc; padding:6px; text-align:right; }
-        thead { background:#f2f2f2; }
-        h2 { margin:0 0 12px; }
-      </style>
-    </head>
-    <body>
-      <h2>${invoiceTitle}</h2>
-      <div>${custHtml}</div>
-      <hr>
-      ${itemsHtml}
-      <hr>
-      <div><strong>الإجمالي:</strong> ${totBefore} ج.م</div>
-      <div style="margin-top:8px"><strong>ملاحظات:</strong><div>${notes}</div></div>
-    </body>
-    </html>
-  `;
+  const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>طباعة الفاتورة</title>
+    <style>body{font-family:Arial;padding:12px} table{width:100%;border-collapse:collapse} th,td{padding:6px;border:1px solid #ccc;text-align:right} h2{margin-top:0}</style></head><body>
+    <h2>${invoiceTitle}</h2><div>${custHtml}</div><hr>${itemsHtml}<hr>
+    <div><strong>الإجمالي:</strong> ${totBefore} ج.م</div>
+    </body></html>`;
 
-  // إنشاء iframe للطباعة
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';
@@ -1169,21 +1037,12 @@ if (custBox) {
   iframe.style.height = '0';
   iframe.style.border = '0';
   document.body.appendChild(iframe);
-
   const doc = iframe.contentWindow.document;
-  doc.open();
-  doc.write(html);
-  doc.close();
-
-  iframe.onload = () => {
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
-    setTimeout(()=> document.body.removeChild(iframe), 1000); // إزالة iframe بعد الطباعة
-  };
+  doc.open(); doc.write(html); doc.close();
+  iframe.onload = () => { try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(e){ console.error(e); } setTimeout(()=> document.body.removeChild(iframe), 1000); };
 });
 
-
-  // initial stock check
+  // initial stock check for rows loaded from server
   document.querySelectorAll('#itemsTableBody tr').forEach(tr=>{
     if (tr.id === 'no-items-row') return;
     const pid = parseInt(tr.dataset.productId||0,10);
