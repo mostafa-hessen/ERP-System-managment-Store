@@ -59,7 +59,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_expenses.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_expenses.php"><i class="fas fa-file-invoice-dollar"></i> المصروفات</a></li>
         <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'gross_profit_report.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/gross_profit_report.php"><i class="fas fa-chart-line"></i> التقارير</a></li>
         <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>admin/manage_users.php"><i class="fas fa-cog"></i> الإعدادات</a></li>
-        <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>customer/show.php"><i class="fas fa-cog"></i> جرب</a></li>
+        <!-- <li class="nav-item"><a class="nav-link <?php echo ($current_page == 'manage_users.php') ? 'active' : ''; ?>" href="<?php echo BASE_URL; ?>customer/show.php"><i class="fas fa-cog"></i> جرب</a></li> -->
     </ul>
 </div>
 

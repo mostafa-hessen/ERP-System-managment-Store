@@ -4,7 +4,6 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php';
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = ""; // لرسائل النجاح أو الخطأ
 $username_err = $email_err = $role_err = ""; // لرسائل أخطاء الحقول
@@ -119,6 +118,7 @@ else {
     }
 }
 
+require_once BASE_DIR . 'partials/sidebar.php';
 
 ?>
 
@@ -159,10 +159,10 @@ else {
                         </select>
                         <span class="invalid-feedback"><?php echo $role_err; ?></span>
                     </div>
-
+<!-- 
                     <div class="mb-3">
                         <p class="form-text">لتغيير كلمة المرور، يرجى إنشاء صفحة منفصلة أو إضافة حقول مخصصة هنا.</p>
-                    </div>
+                    </div> -->
 
                     <button type="submit" name="update_user" class="btn btn-primary"><i class="fas fa-save"></i> تحديث</button>
                     <a href="<?php echo BASE_URL; ?>admin/manage_users.php" class="btn btn-secondary">إلغاء</a>

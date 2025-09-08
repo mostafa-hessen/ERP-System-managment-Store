@@ -92,6 +92,53 @@
 [data-app] a { text-decoration: none; }
 [data-app] .container, [data-app] .container-fluid { padding-inline: 16px; }
 [data-app] .muted { color: var(--muted); }
+[data-app] .note-text { color: var(--text); }
+[data-app][data-theme="dark"] .note-text { color: var(--text); }
+
+
+/* Date Input في الوضع الداكن */
+/* ==============================
+   Placeholder Styling
+   ============================== */
+::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+[data-app][data-theme="dark"] ::placeholder {
+  color: var(--text-soft);
+  opacity: 0.8;
+}
+
+/* ==============================
+   Date Input Styling
+   ============================== */
+input[type="date"] {
+  background-color: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+/* داكن */
+[data-app][data-theme="dark"] input[type="date"] {
+  background-color: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* أيقونة التقويم */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0); /* فاتح افتراضي */
+}
+
+/* داكن */
+[data-app][data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1); /* يخليها بيضاء */
+}
 
 /* ========================== Header ======================== */
 [data-app] .main-header {

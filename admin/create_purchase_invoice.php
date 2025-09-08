@@ -134,7 +134,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                     <?php echo $message; ?>
 
                     <?php if ($supplier_id > 0): // اعرض النموذج فقط إذا تم تحديد مورد ?>
-                    <h4 class="mb-3">المورد: <span class="text-primary fw-bold"><?php echo htmlspecialchars($supplier_name); ?></span></h4>
+                    <h4 class="mb-3 note-text">المورد: <span class="text-primary fw-bold"><?php echo htmlspecialchars($supplier_name); ?></span></h4>
                     <hr>
                     <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
                         <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">

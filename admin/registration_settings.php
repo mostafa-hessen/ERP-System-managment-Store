@@ -58,7 +58,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         <span class="badge bg-danger">مغلق</span>
                     <?php endif; ?>
                 </div>
-                <div class="card-body">
+                <div class="card-body note-text">
                     <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
                         <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
 

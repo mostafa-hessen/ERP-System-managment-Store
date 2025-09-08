@@ -228,6 +228,31 @@ $back_link = $_SERVER['HTTP_REFERER'] ?? (BASE_URL . 'admin/pending_invoices.php
 }
 
 
+.invoice-detiales .badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: white;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.invoice-detiales .badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.15);
+}
+
+/* الحالات */
+.invoice-detiales .badge.badge-success {
+  background: linear-gradient(135deg, #22c55e, #16a34a); /* أخضر */
+}
+
+.invoice-detiales .badge.badge-warning {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b); /* أصفر */
+}
 
 
 /* info cards */
@@ -244,6 +269,7 @@ $back_link = $_SERVER['HTTP_REFERER'] ?? (BASE_URL . 'admin/pending_invoices.php
   .card-header { flex-direction:column; align-items:flex-start; gap:8px; }
 }
 </style>
+<div class="invoice-detiales">
 
 <div class="container mt-4">
   <div class="card shadow-lg mb-4">
@@ -370,6 +396,7 @@ $back_link = $_SERVER['HTTP_REFERER'] ?? (BASE_URL . 'admin/pending_invoices.php
       <small>عرض الفاتورة رقم <?php echo e($invoice['id']); ?></small>
     </div>
   </div>
+</div>
 </div>
 
 <!-- لا نعرض منطقة طباعة خام في الـ DOM، لأننا نستخدم IFRAME ديناميكي -->

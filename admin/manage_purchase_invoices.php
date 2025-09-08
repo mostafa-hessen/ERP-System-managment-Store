@@ -298,8 +298,8 @@ require_once BASE_DIR . 'partials/sidebar.php';
         <div class="col-md-6 offset-md-6">
             <div class="card">
                 <div class="card-body">
-                    <h5 class="card-title text-center mb-3">ملخص إجماليات فواتير المشتريات</h5>
-                    <ul class="list-group list-group-flush">
+                    <h5 class="card-title note-text text-center mb-3">ملخص إجماليات فواتير المشتريات</h5>
+                    <ul class="list-group list-group-flush rounded">
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <strong>إجمالي الفواتير المعروضة حالياً:</strong>
                             <span class="badge bg-primary rounded-pill fs-6">

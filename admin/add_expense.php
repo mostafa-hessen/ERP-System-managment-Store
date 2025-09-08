@@ -165,7 +165,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                 <?php endif; ?>
                             </select>
                             <span class="invalid-feedback"><?php echo $category_id_err; ?></span>
-                             <small class="form-text text-muted">يمكنك إضافة فئات من <a href="<?php echo BASE_URL; ?>admin/manage_expense_categories.php">إدارة فئات المصاريف</a>.</small>
+                             <small class="form-text note-text">يمكنك إضافة فئات من <a href="<?php echo BASE_URL; ?>admin/manage_expense_categories.php">إدارة فئات المصاريف</a>.</small>
                         </div>
 
                         <div class="mb-3">

@@ -432,6 +432,10 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
                     <a href="<?php echo BASE_URL; ?>admin/stock_report.php" class="btn btn-outline-success text-start">
                         <i class="fas fa-chart-bar me-2"></i> تقارير المخزون
                     </a>
+
+                        <a href="<?php echo BASE_URL; ?>admin/stock_valuation_report.php" class="btn btn-outline-success text-start">
+                        <i class="fas fa-balance-scale me-2"></i>  تقرير تقييم المخزون 
+                    </a>
                 </div>
             </div>
         </div>
@@ -447,7 +451,7 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
                     <a href="<?php echo BASE_URL; ?>admin/manage_suppliers.php" class="btn btn-outline-warning text-start">
                         <i class="fas fa-people-carry me-2"></i> إدارة الموردين
                     </a>
-                    <a href="<?php echo BASE_URL; ?>admin/top_selling_products_report.php" class="btn btn-outline-warning text-start">
+                    <a href="<?php echo BASE_URL; ?>admin/manage_purchase_invoices.php" class="btn btn-outline-warning text-start">
                         <i class="fas fa-file-import me-2"></i> تقارير المشتريات
                     </a>
                 </div>
@@ -468,9 +472,10 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
                     <a href="<?php echo BASE_URL; ?>admin/gross_profit_report.php" class="btn btn-outline-danger text-start">
                         <i class="fas fa-funnel-dollar me-2"></i> اجمالي الارباح
                     </a>
-                    <a href="<?php echo BASE_URL; ?>admin/stock_valuation_report.php" class="btn btn-outline-danger text-start">
+                    <a href="<?php echo BASE_URL; ?>admin/manage_expenses.php" class="btn btn-outline-danger text-start">
                         <i class="fas fa-balance-scale me-2"></i> تقرير المصروفات
                     </a>
+                
 
                     <a href="<?php echo BASE_URL; ?>admin/manage_expense_categories.php"
                         class="btn btn-outline-danger text-start">

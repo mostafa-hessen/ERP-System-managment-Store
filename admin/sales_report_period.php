@@ -135,7 +135,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                 <td><?php echo htmlspecialchars($invoice["customer_name"]); ?></td>
                                 <td class="text-end fw-bold"><?php echo number_format(floatval($invoice['invoice_total'] ?? 0), 2); ?> ج.م</td>
                                 <td class="text-center">
-                                    <a href="<?php echo BASE_URL; ?>invoices_out/view.php?id=<?php echo $invoice["invoice_id"]; // تأكد من أن هذا المسار صحيح لـ view_invoice.php ?>" class="btn btn-info btn-sm" title="مشاهدة تفاصيل الفاتورة">
+                                    <a href="<?php echo BASE_URL; ?>invoices_out/view_invoice_detaiels.php?id=<?php echo $invoice["invoice_id"]; // تأكد من أن هذا المسار صحيح لـ view_invoice.php ?>" class="btn btn-info btn-sm" title="مشاهدة تفاصيل الفاتورة">
                                         <i class="fas fa-eye"></i>
                                     </a>
                                 </td>
