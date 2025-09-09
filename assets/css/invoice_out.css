@@ -188,44 +188,7 @@
 #topMsg.error   { background: rgba(239,68,68,0.12); color: var(--rose); border-color: var(--rose); }
 
 /* ===== Modals ===== */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  backdrop-filter: blur(3px);
-}
-.modal-backdrop.open { display: flex !important; }
-.mymodal {
-  background: var(--surface);
-  color: var(--text);
-  border-radius: var(--radius);
-  padding: 20px;
-  min-width: 320px;
-  max-width: 820px;
-  max-height: 80vh;
-  overflow: auto;
-  box-shadow: var(--shadow-2);
-  animation: modalFadeIn var(--normal);
-  position: relative;
-}
-.mymodal h3 {
-  margin: 0 0 12px;
-  font-size: 1.2rem;
-  font-weight: 600;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 6px;
-}
-.mymodal .form-group > * { margin-top: 10px; }
-.modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
-.modal-preview { max-height: 40vh; overflow: auto; border: 1px solid var(--border); padding: 8px; border-radius: var(--radius-sm); }
-@keyframes modalFadeIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
+
 
 /* ===== Special States ===== */
 .insufficient { background: rgba(239,68,68,0.05); }

@@ -6,7 +6,7 @@ require_once BASE_DIR . 'partials/session_user.php';
 require_once BASE_DIR . 'partials/header.php';
 
 // تعريف المتغيرات
-$name = $mobile = $city = $address = "";
+$name = $mobile = $city = $address = $notes = "";
 $name_err = $mobile_err = $city_err = "";
 $message = "";
 
@@ -45,33 +45,38 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_customer'])) {
                     else { $mobile = $mobile_check_val; }
                 } else { $message = "<div class='alert alert-danger'>حدث خطأ ما. الرجاء المحاولة مرة أخرى.</div>"; }
                 $stmt_check->close();
+            } else {
+                $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام التحقق: " . $conn->error . "</div>";
             }
         }
 
         // جلب العنوان (اختياري)
         $address = trim($_POST["address"]);
-        
+
+        // جلب الملاحظات (اختياري)
+        $notes = trim($_POST["notes"]);
+
         // التحقق من عدم وجود أخطاء قبل الإدراج
         if (empty($name_err) && empty($mobile_err) && empty($city_err) && empty($message)) {
-            $sql_insert = "INSERT INTO customers (name, mobile, city, address, created_by) VALUES (?, ?, ?, ?, ?)";
+            $sql_insert = "INSERT INTO customers (name, mobile, city, address, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)";
             if ($stmt_insert = $conn->prepare($sql_insert)) {
-                $stmt_insert->bind_param("ssssi", $name, $mobile, $city, $address, $created_by);
                 $created_by = $_SESSION["id"];
+                $stmt_insert->bind_param("sssssi", $name, $mobile, $city, $address, $notes, $created_by);
 
                 if ($stmt_insert->execute()) {
                     // --- !! تغيير PRG هنا !! ---
                     // تخزين رسالة النجاح في الجلسة
                     $_SESSION['message'] = "<div class='alert alert-success'>تم إضافة العميل بنجاح!</div>";
                     // إعادة التوجيه إلى صفحة عرض العملاء
-                    header("Location: " . BASE_URL . "customer/show.php");
+                    header("Location: " . BASE_URL . "admin/manage_customer.php");
                     exit; // إيقاف التنفيذ بعد إعادة التوجيه
                     // --- !! نهاية تغيير PRG !! ---
                 } else {
-                    $message = "<div class='alert alert-danger'>حدث خطأ أثناء إضافة العميل: " . $stmt_insert->error . "</div>";
+                    $message = "<div class='alert alert-danger'>حدث خطأ أثناء إضافة العميل: " . htmlspecialchars($stmt_insert->error) . "</div>";
                 }
                 $stmt_insert->close();
             } else {
-                 $message = "<div class='alert alert-danger'>خطأ في تحضير الاستعلام: " . $conn->error . "</div>";
+                 $message = "<div class='alert alert-danger'>خطأ في تحضير الاستعلام: " . htmlspecialchars($conn->error) . "</div>";
             }
         } else {
              if (empty($message)) {
@@ -119,6 +124,12 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         <div class="mb-3">
                             <label for="address" class="form-label"><i class="fas fa-map-marker-alt"></i> العنوان (اختياري):</label>
                             <textarea name="address" id="address" class="form-control" rows="3"><?php echo htmlspecialchars($address); ?></textarea>
+                        </div>
+
+                        <!-- حقل الملاحظات الجديد -->
+                        <div class="mb-3">
+                            <label for="notes" class="form-label"><i class="fas fa-sticky-note"></i> ملاحظات عن العميل (اختياري):</label>
+                            <textarea name="notes" id="notes" class="form-control" rows="3" placeholder="مثال: يفضل التواصل بعد الظهر، يتعامل بنظام آجل 30 يوم..."><?php echo htmlspecialchars($notes); ?></textarea>
                         </div>
 
                         <div class="d-grid">
