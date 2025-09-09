@@ -14,6 +14,9 @@ $category_name = '';
 $category_description = '';
 $category_name_err = '';
 
+// روابط
+$back_link = BASE_URL . "admin/manage_expenses.php"; // زر العودة
+
 // جلب توكن CSRF
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -62,7 +65,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_category'])) {
                     if ($stmt_save->execute()) {
                         $_SESSION['message'] = "<div class='alert alert-success'>تم تحديث الفئة بنجاح.</div>";
                     } else {
-                        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ أثناء تحديث الفئة: " . $stmt_save->error . "</div>";
+                        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ أثناء تحديث الفئة.</div>";
                     }
                     $stmt_save->close();
                 } else {
@@ -75,7 +78,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_category'])) {
                     if ($stmt_save->execute()) {
                         $_SESSION['message'] = "<div class='alert alert-success'>تمت إضافة الفئة بنجاح.</div>";
                     } else {
-                        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ أثناء إضافة الفئة: " . $stmt_save->error . "</div>";
+                        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ أثناء إضافة الفئة.</div>";
                     }
                     $stmt_save->close();
                 } else {
@@ -85,9 +88,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_category'])) {
             header("Location: manage_expense_categories.php"); // PRG
             exit;
         } else {
-            // إذا فشل التحقق، احتفظ بالبيانات المدخلة لعرضها في النموذج
-            // $category_name و $category_description تم تعبئتهما بالفعل من POST
-            $edit_mode = !empty($edit_id); // احتفظ بوضع التعديل إذا كان كذلك
+            // احتفظ بالبيانات المدخلة لعرضها في النموذج
+            $edit_mode = !empty($edit_id);
             $category_id_to_edit = $edit_id;
             if(empty($message) && !empty($category_name_err)) $message = "<div class='alert alert-danger'>الرجاء إصلاح الخطأ في اسم الفئة.</div>";
         }
@@ -100,24 +102,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_category'])) {
         $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
     } else {
         $category_id_to_delete = intval($_POST['category_id_to_delete']);
-        // عند حذف الفئة، المصاريف المرتبطة بها سيصبح category_id لها NULL بسبب ON DELETE SET NULL
         $sql_delete = "DELETE FROM expense_categories WHERE id = ?";
         if ($stmt_delete = $conn->prepare($sql_delete)) {
             $stmt_delete->bind_param("i", $category_id_to_delete);
             if ($stmt_delete->execute()) {
                 $_SESSION['message'] = ($stmt_delete->affected_rows > 0) ? "<div class='alert alert-success'>تم حذف الفئة بنجاح. المصاريف المرتبطة أصبحت بدون فئة.</div>" : "<div class='alert alert-warning'>لم يتم العثور على الفئة أو لم يتم حذفها.</div>";
             } else {
-                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف الفئة: " . $stmt_delete->error . "</div>";
+                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف الفئة.</div>";
             }
             $stmt_delete->close();
         } else {
-            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف: " . $conn->error . "</div>";
+            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف.</div>";
         }
     }
     header("Location: manage_expense_categories.php"); // PRG
     exit;
 }
-
 
 // --- جلب بيانات فئة للتعديل (إذا تم طلب ذلك عبر GET) ---
 if (isset($_GET['edit_id']) && is_numeric($_GET['edit_id'])) {
@@ -158,104 +158,129 @@ if ($result_select_categories) {
         $categories_list[] = $row;
     }
 } else {
-    $message .= "<div class='alert alert-danger'>خطأ في جلب قائمة الفئات: " . $conn->error . "</div>";
+    $message .= "<div class='alert alert-danger'>خطأ في جلب قائمة الفئات.</div>";
 }
-
 
 require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/sidebar.php';
 $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
 ?>
 
-<div class="container mt-5 pt-3">
-    <div class="row">
-        <div class="col-lg-4 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-header <?php echo $edit_mode ? 'bg-warning text-dark' : 'bg-success text-white'; ?>">
-                    <h5><i class="fas <?php echo $edit_mode ? 'fa-edit' : 'fa-plus-circle'; ?>"></i> <?php echo $edit_mode ? 'تعديل الفئة' : 'إضافة فئة مصروفات جديدة'; ?></h5>
-                </div>
-                <div class="card-body">
-                    <form action="<?php echo $current_page_url_for_forms . ($edit_mode ? '?edit_id=' . $category_id_to_edit : ''); ?>" method="post">
-                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                        <?php if ($edit_mode && $category_id_to_edit): ?>
-                            <input type="hidden" name="edit_id" value="<?php echo $category_id_to_edit; ?>">
-                        <?php endif; ?>
+<style>
+    /* مظهر محسن وخفيف للفئات */
+    .content-max { max-width: 1100px; margin: 0 auto; }
+    .card .card-header h5 { margin: 0; }
+    .btn-back-sm { padding: .25rem .5rem; font-size: .85rem; }
+    .form-small .form-control, .form-small .form-select, .form-small textarea { padding: .4rem .5rem; }
+    @media (max-width: 767px) {
+        .col-lg-4, .col-lg-8 { flex: 0 0 100%; max-width: 100%; }
+        .mt-lg-0 { margin-top: 0 !important; }
+    }
+</style>
 
-                        <div class="mb-3">
-                            <label for="category_name" class="form-label">اسم الفئة:</label>
-                            <input type="text" name="category_name" id="category_name" class="form-control <?php echo (!empty($category_name_err)) ? 'is-invalid' : ''; ?>" value="<?php echo htmlspecialchars($category_name); ?>" required>
-                            <span class="invalid-feedback"><?php echo $category_name_err; ?></span>
-                        </div>
-                        <div class="mb-3">
-                            <label for="category_description" class="form-label">الوصف (اختياري):</label>
-                            <textarea name="category_description" id="category_description" class="form-control" rows="3"><?php echo htmlspecialchars($category_description); ?></textarea>
-                        </div>
-                        <button type="submit" name="save_category" class="btn <?php echo $edit_mode ? 'btn-warning' : 'btn-success'; ?>">
-                            <i class="fas fa-save"></i> <?php echo $edit_mode ? 'تحديث الفئة' : 'إضافة الفئة'; ?>
-                        </button>
-                        <?php if ($edit_mode): ?>
-                            <a href="<?php echo $current_page_url_for_forms; ?>" class="btn btn-secondary ms-2">إلغاء التعديل</a>
-                        <?php endif; ?>
-                    </form>
-                </div>
+<div class="container-fluid mt-4 pt-3">
+    <div class="content-max">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h1 class="h4 mb-0"><i class="fas fa-tags"></i> إدارة فئات المصروفات</h1>
+                <small class="text-muted">أضف أو حدِّث فئات المصروفات المستخدمة في النظام.</small>
+            </div>
+            <div>
+                <a href="<?php echo $back_link; ?>" class="btn btn-outline-secondary btn-back-sm"><i class="fas fa-arrow-left"></i> عودة للمصروفات</a>
             </div>
         </div>
 
-        <div class="col-lg-8">
-            <h1><i class="fas fa-tags"></i> إدارة فئات المصروفات</h1>
-            <?php echo $message; // عرض رسائل الحالة العامة ?>
+        <?php echo $message; ?>
 
-            <div class="card shadow-sm mt-4">
-                <div class="card-header">
-                    قائمة الفئات المسجلة
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover table-bordered align-middle">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th>#</th>
-                                    <th>اسم الفئة</th>
-                                    <th>الوصف</th>
-                                    <th>تاريخ الإضافة</th>
-                                    <th class="text-center">إجراءات</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (!empty($categories_list)): ?>
-                                    <?php $cat_counter = 1; ?>
-                                    <?php foreach($categories_list as $category_item): ?>
-                                        <tr>
-                                            <td><?php echo $cat_counter++; ?></td>
-                                            <td><?php echo htmlspecialchars($category_item["name"]); ?></td>
-                                            <td><?php echo !empty($category_item["description"]) ? nl2br(htmlspecialchars($category_item["description"])) : '-'; ?></td>
-                                            <td><?php echo date('Y-m-d', strtotime($category_item["created_at"])); ?></td>
-                                            <td class="text-center">
-                                                <a href="<?php echo $current_page_url_for_forms; ?>?edit_id=<?php echo $category_item["id"]; ?>" class="btn btn-warning btn-sm" title="تعديل الفئة">
-                                                    <i class="fas fa-edit"></i>
-                                                </a>
-                                                <form action="<?php echo $current_page_url_for_forms; ?>" method="post" class="d-inline ms-1">
-                                                    <input type="hidden" name="category_id_to_delete" value="<?php echo $category_item["id"]; ?>">
-                                                    <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                    <button type="submit" name="delete_category" class="btn btn-danger btn-sm"
-                                                            onclick="return confirm('هل أنت متأكد من حذف هذه الفئة؟ المصاريف المرتبطة بها ستصبح بدون فئة.');"
-                                                            title="حذف الفئة">
-                                                        <i class="fas fa-trash-alt"></i>
-                                                    </button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="5" class="text-center">لا توجد فئات مصاريف مسجلة حالياً. قم بإضافة فئة جديدة.</td>
-                                    </tr>
+        <div class="row g-3">
+            <div class="col-lg-4">
+                <div class="card shadow-sm">
+                    <div class="card-header <?php echo $edit_mode ? 'bg-warning text-dark' : 'bg-success text-white'; ?>">
+                        <h5><i class="fas <?php echo $edit_mode ? 'fa-edit' : 'fa-plus-circle'; ?>"></i> <?php echo $edit_mode ? 'تعديل الفئة' : 'إضافة فئة مصروفات جديدة'; ?></h5>
+                    </div>
+                    <div class="card-body form-small">
+                        <form action="<?php echo $current_page_url_for_forms . ($edit_mode ? '?edit_id=' . $category_id_to_edit : ''); ?>" method="post">
+                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                            <?php if ($edit_mode && $category_id_to_edit): ?>
+                                <input type="hidden" name="edit_id" value="<?php echo $category_id_to_edit; ?>">
+                            <?php endif; ?>
+
+                            <div class="mb-3">
+                                <label for="category_name" class="form-label">اسم الفئة:</label>
+                                <input type="text" name="category_name" id="category_name" class="form-control <?php echo (!empty($category_name_err)) ? 'is-invalid' : ''; ?>" value="<?php echo htmlspecialchars($category_name); ?>" required>
+                                <div class="invalid-feedback"><?php echo htmlspecialchars($category_name_err); ?></div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="category_description" class="form-label">الوصف (اختياري):</label>
+                                <textarea name="category_description" id="category_description" class="form-control" rows="3"><?php echo htmlspecialchars($category_description); ?></textarea>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" name="save_category" class="btn <?php echo $edit_mode ? 'btn-warning' : 'btn-success'; ?>">
+                                    <i class="fas fa-save"></i> <?php echo $edit_mode ? 'تحديث الفئة' : 'إضافة الفئة'; ?>
+                                </button>
+                                <?php if ($edit_mode): ?>
+                                    <a href="<?php echo $current_page_url_for_forms; ?>" class="btn btn-secondary">إلغاء التعديل</a>
                                 <?php endif; ?>
-                            </tbody>
-                        </table>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
+
+            <div class="col-lg-8 mt-lg-0">
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        قائمة الفئات المسجلة
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover table-bordered align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th style="width:60px">#</th>
+                                        <th>اسم الفئة</th>
+                                        <th>الوصف</th>
+                                        <th style="width:140px">تاريخ الإضافة</th>
+                                        <th style="width:120px" class="text-center">إجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($categories_list)): ?>
+                                        <?php $cat_counter = 1; ?>
+                                        <?php foreach($categories_list as $category_item): ?>
+                                            <tr>
+                                                <td><?php echo $cat_counter++; ?></td>
+                                                <td><?php echo htmlspecialchars($category_item["name"]); ?></td>
+                                                <td><?php echo !empty($category_item["description"]) ? nl2br(htmlspecialchars($category_item["description"])) : '-'; ?></td>
+                                                <td><?php echo date('Y-m-d', strtotime($category_item["created_at"])); ?></td>
+                                                <td class="text-center">
+                                                    <a href="<?php echo $current_page_url_for_forms; ?>?edit_id=<?php echo $category_item["id"]; ?>" class="btn btn-warning btn-sm" title="تعديل الفئة">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                    <form action="<?php echo $current_page_url_for_forms; ?>" method="post" class="d-inline ms-1">
+                                                        <input type="hidden" name="category_id_to_delete" value="<?php echo $category_item["id"]; ?>">
+                                                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                                        <button type="submit" name="delete_category" class="btn btn-danger btn-sm"
+                                                                onclick="return confirm('هل أنت متأكد من حذف هذه الفئة؟ المصاريف المرتبطة بها ستصبح بدون فئة.');"
+                                                                title="حذف الفئة">
+                                                            <i class="fas fa-trash-alt"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="5" class="text-center">لا توجد فئات مصاريف مسجلة حالياً. قم بإضافة فئة جديدة.</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>

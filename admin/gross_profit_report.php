@@ -1,6 +1,6 @@
 <?php
 // reports/profit_report_invoices_summary.responsive.php
-// نسخة محسّنة: تصميم responsive وحديث، يستخدم متغيرات الألوان المرسلة
+// نسخة محسّنة: تصميم responsive وحديث، متطلبات الطباعة، فترات سريعة، رأس جدول ثابت.
 $page_title = "تقرير الربح - ملخص الفواتير";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
@@ -51,8 +51,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_invoice_items' && isset($
 $message = '';
 $summaries = [];
 
-$start_date_filter = isset($_GET['start_date']) ? trim($_GET['start_date']) : date('Y-m-01');
-$end_date_filter   = isset($_GET['end_date']) ? trim($_GET['end_date']) : date('Y-m-t');
+// الافتراضي: اليوم (لو المستخدم لم يحدد)
+$start_date_filter = isset($_GET['start_date']) && trim($_GET['start_date']) !== '' ? trim($_GET['start_date']) : date('Y-m-d');
+$end_date_filter   = isset($_GET['end_date']) && trim($_GET['end_date']) !== '' ? trim($_GET['end_date']) : date('Y-m-d');
 
 $report_generated = false;
 
@@ -135,7 +136,7 @@ if (!empty($start_date_filter) && !empty($end_date_filter)) {
     }
 }
 
-// ====== حساب ابتدائي لأرباح اليوم (تُعرض دائماً) ======
+// ====== (إبقاء حساب اليوم كمرجع — لكنه لن يُعرض كـ card منفصلة الآن) ======
 $today_revenue = 0; $today_cost = 0; $today_profit = 0;
 $today_start = date('Y-m-d') . " 00:00:00";
 $today_end   = date('Y-m-d') . " 23:59:59";
@@ -161,62 +162,37 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
 <style>
 :root {
-  /* base palette (user-provided tokens) */
   --primary: #0b84ff;
-  --primary-600: #0a6be0;
-  --primary-700: #0a58c8;
-
-  --accent: #7c3aed;
-  --accent-600: #6d28d9;
-  --teal: #10b981;
-  --amber: #f59e0b;
-  --rose: #ef4444;
-  --const-white: #ffffff;
-  --bg: #f6f8fc;
+  --grad-1: linear-gradient(135deg, #0b84ff, #7c3aed);
+  --grad-2: linear-gradient(135deg, #10b981, #0ea5e9);
+  --grad-3: linear-gradient(135deg, #f59e0b, #ef4444);
   --surface: #ffffff;
   --surface-2: #f9fbff;
   --text: #0f172a;
   --text-soft: #334155;
   --muted: #64748b;
   --border: rgba(2,6,23,0.08);
-
   --radius: 14px;
-  --radius-sm: 10px;
-  --radius-lg: 20px;
-
   --shadow-1: 0 10px 24px rgba(15,23,42,0.06);
   --shadow-2: 0 12px 28px rgba(11,132,255,0.14);
-  --ring: 0 0 0 4px rgba(11,132,255,0.18);
-
-  --header-h: 64px;
-
-  --grad-1: linear-gradient(135deg, #0b84ff, #7c3aed);
-  --grad-2: linear-gradient(135deg, #10b981, #0ea5e9);
-  --grad-3: linear-gradient(135deg, #f59e0b, #ef4444);
 }
 
-[data-app][data-theme="dark"] {
-  --bg: #0c1222;
-  --surface: #0f162d;
-  --surface-2: #0a1122;
-  --text: #e5e7eb;
-  --text-soft: #cbd5e1;
-  --muted: #94a3b8;
-  --border: rgba(148,163,184,0.15);
-  --shadow-1: 0 12px 30px rgba(0,0,0,0.45);
-  --shadow-2: 0 18px 40px rgba(11,132,255,0.22);
-  --ring: 0 0 0 4px rgba(11,132,255,0.24);
-}
-
-/* Layout container */
+/* container and header */
 .container { max-width:1100px; margin:0 auto; padding:18px; }
-
-/* Header */
 .page-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
 .page-header h3 { margin:0; font-size:1.25rem; color:var(--text); }
 .small-muted { color:var(--text-soft); }
 
-/* Summary cards grid */
+/* filters */
+.card.filter-card { background:var(--surface); border-radius:12px; padding:12px; margin-bottom:16px; box-shadow:var(--shadow-1); }
+.form-row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+
+/* quick periods buttons */
+.periods { display:flex; gap:8px; align-items:center; margin-right:8px; }
+.periods button { background:transparent; border:1px solid var(--border); padding:8px 10px; border-radius:8px; cursor:pointer; color:var(--text); }
+.periods button.active { background:var(--primary); color:#fff; box-shadow:var(--shadow-2); transform:translateY(-2px); }
+
+/* summary cards */
 .summary-cards { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:20px; }
 .summary-card {
   background: var(--surface);
@@ -225,173 +201,196 @@ require_once BASE_DIR . 'partials/sidebar.php';
   box-shadow: var(--shadow-1);
   position:relative;
   overflow:hidden;
-  transition: transform var(--fast), box-shadow var(--fast);
+  transition: transform .18s ease, box-shadow .18s ease;
 }
 .summary-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-2); }
 .summary-card .title { color:var(--muted); font-size:0.95rem; margin-bottom:8px; }
 .summary-card .value { font-size:1.75rem; font-weight:800; color:var(--text); }
 .summary-card .sub { color:var(--text-soft); margin-top:8px; font-size:0.9rem; }
-
-/* Accent strips and icons */
 .summary-card::before { content:''; position:absolute; right:-30px; top:-30px; width:160px; height:160px; opacity:0.12; transform:rotate(20deg); }
 .card-revenue::before { background:var(--grad-1); }
 .card-cost::before { background:var(--grad-2); }
 .card-profit::before { background:var(--grad-3); }
-.card-today::before { background: linear-gradient(135deg, rgba(11,132,255,0.9), rgba(124,58,237,0.9)); }
-
-/* tiny badge */
 .currency-badge { display:inline-block; margin-left:8px; font-weight:700; color:var(--muted); font-size:0.85rem; }
 
-/* profit percent */
-.profit-percent { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:10px; font-weight:700; }
-.profit-percent.positive { color:#075928; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.12); }
-.profit-percent.negative { color:#7f1d1d; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.12); }
+/* table with sticky header and scrollable body */
 
-/* Table */
-.table-responsive { overflow:auto; }
-.table { width:100%; border-collapse:collapse; }
-.table th, .table td { padding:10px 12px; border-bottom:1px solid rgba(0,0,0,0.04); }
-.table thead th { background:var(--surface-2); text-align:left; }
 
+
+
+
+
+
+
+
+
+
+
+
+.table-wrapper { border-radius:12px; overflow:hidden; box-shadow:var(--shadow-1); background:var(--surface); }
+.table-scroll {
+  max-height: 520px; /* adjust as needed */
+  overflow: auto;
+}
+.table { width:100%; border-collapse:collapse; min-width: 800px; }
+.table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  z-index: 4;
+  padding:10px 12px;
+  border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.table tbody td { padding:10px 12px; border-bottom:1px solid rgba(0,0,0,0.04); vertical-align:middle; }
+.table tfoot td { padding:10px 12px; border-top:1px solid var(--border); background:var(--surface-2); }
+
+/* profit badge */
 .badge-profit { font-weight:700; padding:6px 8px; border-radius:6px; display:inline-block; }
 .badge-profit.positive { background:rgba(16,185,129,0.08); color:#075928; border:1px solid rgba(16,185,129,0.12); }
 .badge-profit.negative { background:rgba(239,68,68,0.06); color:#7f1d1d; border:1px solid rgba(239,68,68,0.12); }
 
-/* Modal */
+/* modal lite */
 .modal-backdrop-lite { position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(2,6,23,0.5); display:none; align-items:center; justify-content:center; z-index:9999; padding:16px; }
 .modal-card { background:var(--surface); border-radius:12px; max-width:980px; width:100%; max-height:85vh; overflow:auto; padding:18px; box-shadow:var(--shadow-2); }
 
-/* Responsive adjustments */
-@media (max-width: 900px) {
-  .summary-cards { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 640px) {
-  .summary-cards { grid-template-columns: 1fr; }
-  .page-header { flex-direction:column; align-items:flex-start; gap:6px; }
-  .table th, .table td { padding:8px; font-size:0.95rem; }
-}
+/* responsive */
+@media (max-width:900px) { .summary-cards { grid-template-columns: repeat(2, 1fr); } .table { min-width: 700px; } }
+@media (max-width:640px) { .summary-cards { grid-template-columns: 1fr; } .page-header { flex-direction:column; align-items:flex-start; gap:6px; } .table { min-width: 600px; } }
 </style>
 
-<div class="container">
+<div class="container-fluid">
     <div class="page-header">
-        <h3><i class="fas fa-file-invoice-dollar"></i> تقرير الربح — ملخّص الفواتير</h3>
-        <div class="small-muted">الأسعار المستخدمة مأخوذة من بنود الفاتورة نفسها</div>
+        <h3><i class="fas fa-file-invoice-dollar"></i> تقرير الربح — ملخص الفواتير</h3>
+        <div>
+            <div class="small-muted">الأسعار مأخوذة من بنود الفاتورة نفسها</div>
+            <div style="margin-top:6px;text-align:right">
+                <a href="<?php echo htmlspecialchars(BASE_URL . 'user/welcome.php'); ?>" class="btn btn-sm btn-light">← العودة</a>
+                <button id="printBtn" class="btn btn-sm btn-primary">طباعة</button>
+            </div>
+        </div>
     </div>
 
     <?php echo $message; ?>
 
-    <div class="card mb-3" style="background:var(--surface);border-radius:12px;padding:12px;margin-bottom:16px;box-shadow:var(--shadow-1);">
-        <div class="card-body p-0">
-            <form method="get" class="row gx-2 gy-2 align-items-end">
-                <div class="col-md-4">
+    <div class="card filter-card">
+        <div class="card-body p-2">
+            <form id="filterForm" method="get" class="form-row">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <div class="periods" role="tablist" aria-label="فترات سريعة">
+                        <button type="button" data-period="day" id="btnDay">يوم</button>
+                        <button type="button" data-period="week" id="btnWeek">أسبوع</button>
+                        <button type="button" data-period="month" id="btnMonth">شهر</button>
+                        <button type="button" data-period="custom" id="btnCustom">مخصص</button>
+                    </div>
+                    <input type="hidden" name="period" id="periodInput" value="<?php echo e($_GET['period'] ?? 'day'); ?>">
+                </div>
+
+                <div>
                     <label class="form-label">من تاريخ</label>
-                    <input type="date" name="start_date" class="form-control" value="<?php echo e($start_date_filter); ?>" required>
+                    <input type="date" name="start_date" id="start_date" class="form-control" value="<?php echo e($start_date_filter); ?>" required>
                 </div>
-                <div class="col-md-4">
+
+                <div>
                     <label class="form-label">إلى تاريخ</label>
-                    <input type="date" name="end_date" class="form-control" value="<?php echo e($end_date_filter); ?>" required>
+                    <input type="date" name="end_date" id="end_date" class="form-control" value="<?php echo e($end_date_filter); ?>" required>
                 </div>
-                <div class="col-md-2 d-grid">
-                    <button class="btn btn-primary">عرض</button>
+
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button type="submit" class="btn btn-primary">عرض</button>
+                    <button type="button" id="todayQuick" class="btn btn-outline-secondary">اليوم</button>
                 </div>
-                <div class="col-md-2 text-end small-muted" style="align-self:center;">
-                    <small>عرض الفواتير التي تم دفعها (delivered = yes)</small>
+
+                <div style="margin-left:auto;color:var(--muted);font-size:0.9rem;">
+                    <small>عرض الفواتير المسلمة فقط (delivered = yes)</small>
                 </div>
             </form>
         </div>
     </div>
 
     <?php if ($report_generated): ?>
-        <!-- بطاقات الملخص -->
-        <div class="summary-cards">
+        <div class="summary-cards" aria-hidden="<?php echo $report_generated ? 'false' : 'true'; ?>">
             <div class="summary-card card-revenue">
                 <div class="title">إجمالي الإيرادات</div>
                 <div class="value"><?php echo number_format($grand_total_revenue ?? 0,2); ?> <span class="currency-badge">ج.م</span></div>
-                <div class="sub">مجموع ما سجلته الفواتير كسعر بيع خلال الفترة</div>
+                <div class="sub">مجموع أسعار البيع المسجلة في الفواتير خلال الفترة</div>
             </div>
+
             <div class="summary-card card-cost">
                 <div class="title">تكلفة البضاعة المباعة</div>
                 <div class="value"><?php echo number_format($grand_total_cost ?? 0,2); ?> <span class="currency-badge">ج.م</span></div>
-                <div class="sub">مجموع  تكلفة البضاعة المباعة في الفترة</div>
+                <div class="sub">مجموع (الكمية × سعر التكلفة) كما سجل في البنود</div>
             </div>
+
             <div class="summary-card card-profit">
                 <div class="title">صافي الربح</div>
                 <div class="value"><?php echo number_format($grand_total_profit ?? 0,2); ?> <span class="currency-badge">ج.م</span></div>
                 <div class="sub">نسبة الربح: <span class="profit-percent <?php echo (($grand_total_profit ?? 0) >= 0) ? 'positive' : 'negative'; ?>"><?php echo round($profit_percent ?? 0,2); ?>%</span></div>
-            </div>
-            <!-- بطاقة أرباح اليوم (قيمة ابتدائية) -->
-            <div class="summary-card card-today">
-                <div class="title">أرباح اليوم (مبدئياً)</div>
-                <?php $today_class = ($today_profit >= 0) ? 'positive' : 'negative'; ?>
-                <div class="value"><?php echo number_format($today_profit,2); ?> <span class="currency-badge">ج.م</span></div>
-                <div class="sub">إيراد اليوم: <?php echo number_format($today_revenue,2); ?>، التكلفة: <?php echo number_format($today_cost,2); ?> — <span class="profit-percent <?php echo $today_class; ?>"><?php echo round(($today_revenue>0?($today_profit/$today_revenue*100):0),2); ?>%</span></div>
             </div>
         </div>
 
         <?php if (empty($summaries)): ?>
             <div class="alert alert-info">لا توجد فواتير مسلّمة خلال الفترة المحددة.</div>
         <?php else: ?>
-            <div class="card mb-3" style="box-shadow:var(--shadow-1);border-radius:12px;overflow:hidden;">
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-striped mb-0 profit-summary-table table-fixed">
-                            <thead class="table-light">
-                                <tr>
-                                    <th style="width:90px"># فاتورة</th>
-                                    <th style="width:160px">التاريخ</th>
-                                    <th>العميل</th>
-                                    <th style="width:130px" class="text-end">إجمالي بيع</th>
-                                    <th style="width:140px" class="text-end">إجمالي تكلفة</th>
-                                    <th style="width:120px" class="text-end">الربح</th>
-                                    <th style="width:110px" class="text-center">تفاصيل</th>
+            <div class="table-wrapper mb-3">
+                <div class="table-scroll">
+                    <table class="table mb-0" id="reportTable">
+                        <thead>
+                            <tr>
+                                <th style="width:90px"># فاتورة</th>
+                                <th style="width:160px">التاريخ</th>
+                                <th>العميل</th>
+                                <th style="width:130px" class="text-end">إجمالي بيع</th>
+                                <th style="width:140px" class="text-end">إجمالي تكلفة</th>
+                                <th style="width:120px" class="text-end">الربح</th>
+                                <th style="width:140px" class="text-center">تفاصيل / صفحة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($summaries as $s):
+                                $profit_class = $s['profit'] >= 0 ? 'positive' : 'negative';
+                            ?>
+                                <tr class="invoice-row" data-invoice-id="<?php echo intval($s['invoice_id']); ?>">
+                                    <td><strong>#<?php echo intval($s['invoice_id']); ?></strong></td>
+                                    <td><?php echo e($s['invoice_created_at']); ?></td>
+                                    <td><?php echo e($s['customer_name'] ?: 'عميل غير محدد'); ?></td>
+                                    <td class="text-end"><?php echo number_format($s['total_sold'],2); ?> ج.م</td>
+                                    <td class="text-end"><?php echo number_format($s['total_cost'],2); ?> ج.م</td>
+                                    <td class="text-end"><span class="badge-profit <?php echo $profit_class; ?>"><?php echo number_format($s['profit'],2); ?> ج.م</span></td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-primary details-btn" data-invoice-id="<?php echo intval($s['invoice_id']); ?>">عرض</button>
+                                        <!-- <a href="<?php echo BASE_URL; ?>invoices_out/view_invoice_detaiels.php?id=<?php echo intval($s['invoice_id']); ?>" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">فتح الصفحة</a> -->
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($summaries as $s):
-                                    $profit_class = $s['profit'] >= 0 ? 'positive' : 'negative';
-                                ?>
-                                    <tr class="invoice-row" data-invoice-id="<?php echo intval($s['invoice_id']); ?>">
-                                        <td><strong>#<?php echo intval($s['invoice_id']); ?></strong></td>
-                                        <td><?php echo e($s['invoice_created_at']); ?></td>
-                                        <td><?php echo e($s['customer_name'] ?: 'عميل غير محدد'); ?></td>
-                                        <td class="text-end"><?php echo number_format($s['total_sold'],2); ?> ج.م</td>
-                                        <td class="text-end"><?php echo number_format($s['total_cost'],2); ?> ج.م</td>
-                                        <td class="text-end"><span class="badge-profit <?php echo $profit_class; ?>"><?php echo number_format($s['profit'],2); ?> ج.م</span></td>
-                                        <td class="text-center">
-                                            <button type="button" class="btn btn-sm btn-outline-primary details-btn" data-invoice-id="<?php echo intval($s['invoice_id']); ?>">عرض التفاصيل</button>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                            <tfoot class="table-light">
-                                <?php
-                                $grand_sold = 0; $grand_cost = 0; $grand_qty = 0;
-                                foreach ($summaries as $ss) { $grand_sold += $ss['total_sold']; $grand_cost += $ss['total_cost']; $grand_qty += $ss['total_qty']; }
-                                $grand_profit = $grand_sold - $grand_cost;
-                                ?>
-                                <tr>
-                                    <th colspan="3" class="text-end">الإجمالي الكلي للفواتير المعروضة:</th>
-                                    <th class="text-end"><?php echo number_format($grand_sold,2); ?> ج.م</th>
-                                    <th class="text-end"><?php echo number_format($grand_cost,2); ?> ج.م</th>
-                                    <th class="text-end"><strong><?php echo number_format($grand_profit,2); ?> ج.م</strong></th>
-                                    <th></th>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <?php
+                            $grand_sold = 0; $grand_cost = 0; $grand_qty = 0;
+                            foreach ($summaries as $ss) { $grand_sold += $ss['total_sold']; $grand_cost += $ss['total_cost']; $grand_qty += $ss['total_qty']; }
+                            $grand_profit = $grand_sold - $grand_cost;
+                            ?>
+                            <tr>
+                                <td colspan="3" class="text-end"><strong>الإجمالي الكلي للفواتير المعروضة:</strong></td>
+                                <td class="text-end"><strong><?php echo number_format($grand_sold,2); ?> ج.م</strong></td>
+                                <td class="text-end"><strong><?php echo number_format($grand_cost,2); ?> ج.م</strong></td>
+                                <td class="text-end"><strong><?php echo number_format($grand_profit,2); ?> ج.م</strong></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>
             </div>
         <?php endif; ?>
 
-        <!-- شرح مبسط وواضح -->
         <div class="card" style="box-shadow:var(--shadow-1);border-radius:12px;padding:12px;">
             <div class="card-body small-muted">
                 <strong>كيف تم الحساب؟</strong>
                 <ul>
-                    <li>الإيرادات = مجموع أسعار البيع كما سُجلت في بنود الفاتورة (ما دفعه العميل وفق الفاتورة).</li>
+                    <li>الإيرادات = مجموع أسعار البيع كما سُجلت في بنود الفاتورة.</li>
                     <li>تكلفة البضاعة = مجموع (الكمية × سعر التكلفة المسجل بنفس بند الفاتورة).</li>
                     <li>الربح = الإيرادات − التكلفة. ونسبة الربح = (الربح ÷ الإيرادات) × 100.</li>
-                    <li>اضغط "عرض التفاصيل" لأي فاتورة لتعرف سعر بيع كل منتج، وسعر التكلفة المستخدم، وكم ربحت من كل بند.</li>
+                    <li>اضغط "عرض" لأي فاتورة لعرض بنودها داخل النافذة، أو "فتح الصفحة" لفتح صفحة الفاتورة كاملة.</li>
                 </ul>
             </div>
         </div>
@@ -404,7 +403,10 @@ require_once BASE_DIR . 'partials/sidebar.php';
     <div class="modal-card" role="document" aria-modal="true">
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 id="modalTitle">تفاصيل الفاتورة</h5>
-            <button id="closeModal" class="btn btn-sm btn-light">✖</button>
+            <div>
+                <a id="openInvoicePage" href="#" target="_blank" class="btn btn-sm btn-outline-secondary" style="margin-left:6px;">فتح الصفحة</a>
+                <button id="closeModal" class="btn btn-sm btn-light">✖</button>
+            </div>
         </div>
         <div id="modalBody">
             <div class="small-muted mb-2" id="modalInvoiceInfo"></div>
@@ -415,11 +417,66 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function(){
-    const modal = document.getElementById('modalBackdrop');
-    const modalTitle = document.getElementById('modalTitle');
-    const modalContent = document.getElementById('modalContent');
-    const modalInvoiceInfo = document.getElementById('modalInvoiceInfo');
-    const closeModal = document.getElementById('closeModal');
+    // helpers
+    function qs(s){ return document.querySelector(s); }
+    function qsa(s){ return Array.from(document.querySelectorAll(s)); }
+    function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replace(/[&<>"']/g,function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; }); }
+
+    // period buttons behavior
+    const btnDay = qs('#btnDay'), btnWeek = qs('#btnWeek'), btnMonth = qs('#btnMonth'), btnCustom = qs('#btnCustom');
+    const startIn = qs('#start_date'), endIn = qs('#end_date'), periodInput = qs('#periodInput'), filterForm = qs('#filterForm');
+    const todayQuick = qs('#todayQuick');
+
+    function formatDate(d){ return d.toISOString().slice(0,10); }
+    const now = new Date();
+    if (!startIn.value) startIn.value = formatDate(now);
+    if (!endIn.value) endIn.value = formatDate(now);
+
+    function setPeriod(p, autoSubmit = false){
+        [btnDay,btnWeek,btnMonth,btnCustom].forEach(b=> b.classList.remove('active'));
+        const today = new Date();
+        let s = new Date(), e = new Date();
+        if (p === 'day') {
+            s = new Date(today); e = new Date(today);
+            btnDay.classList.add('active');
+        } else if (p === 'week') {
+            const day = today.getDay() || 7;
+            s = new Date(today); s.setDate(today.getDate() - (day - 1));
+            e = new Date(s); e.setDate(s.getDate() + 6);
+            btnWeek.classList.add('active');
+        } else if (p === 'month') {
+            s = new Date(today.getFullYear(), today.getMonth(), 1);
+            e = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            btnMonth.classList.add('active');
+        } else {
+            btnCustom.classList.add('active');
+            periodInput.value = 'custom';
+            return;
+        }
+        startIn.value = formatDate(s);
+        endIn.value = formatDate(e);
+        periodInput.value = p;
+        if (autoSubmit) { setTimeout(()=> filterForm.submit(), 120); }
+    }
+
+    // initial: if user provided period via GET, respect it; else default day
+    const initialPeriod = '<?php echo e($_GET['period'] ?? 'day'); ?>';
+    setPeriod(initialPeriod || 'day', false);
+
+    btnDay?.addEventListener('click', ()=> setPeriod('day', true));
+    btnWeek?.addEventListener('click', ()=> setPeriod('week', true));
+    btnMonth?.addEventListener('click', ()=> setPeriod('month', true));
+    btnCustom?.addEventListener('click', ()=> setPeriod('custom', false));
+
+    todayQuick?.addEventListener('click', function(){ setPeriod('day', true); });
+
+    // modal behavior (details)
+    const modal = qs('#modalBackdrop');
+    const modalTitle = qs('#modalTitle');
+    const modalContent = qs('#modalContent');
+    const modalInvoiceInfo = qs('#modalInvoiceInfo');
+    const closeModal = qs('#closeModal');
+    const openInvoicePage = qs('#openInvoicePage');
 
     async function fetchInvoiceItems(id){
         modalContent.innerHTML = 'جارٍ التحميل...';
@@ -428,7 +485,7 @@ document.addEventListener('DOMContentLoaded', function(){
             const res = await fetch(location.pathname + '?' + params.toString(), { credentials: 'same-origin' });
             const data = await res.json();
             if (!data.ok) {
-                modalContent.innerHTML = '<div class="alert alert-danger">خطأ: ' + (data.msg||'فشل التحميل') + '</div>';
+                modalContent.innerHTML = '<div class="alert alert-danger">خطأ: ' + escapeHtml(data.msg||'فشل التحميل') + '</div>';
                 return;
             }
             const items = data.items || [];
@@ -437,8 +494,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 return;
             }
             // Build table
-            let html = '<div class="table-responsive"><table class="table table-sm table-striped">';
-            html += '<thead><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:120px">سعر البيع</th><th style="width:120px">إجمالي البيع</th><th style="width:120px">سعر التكلفة</th><th style="width:120px">اجمالي سعر التكلفه</th><th style="width:120px">صافي الربح</th></tr></thead><tbody>';
+            let html = '<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:110px">سعر البيع</th><th style="width:110px">إجمالي البيع</th><th style="width:110px">سعر التكلفة</th><th style="width:110px">إجمالي التكلفة</th><th style="width:110px">صافي الربح</th></tr></thead><tbody>';
             let sumSell = 0, sumCost = 0, sumProfit = 0;
             for (const it of items) {
                 const qty = parseFloat(it.quantity || 0);
@@ -459,13 +515,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 </tr>`;
             }
             html += `</tbody><tfoot class="table-light"><tr>
-                <th>المجموع</th>
-                <th></th>
-                <th></th>
-                <th class="text-end">${sumSell.toFixed(2)}</th>
-                <th></th>
-                <th class="text-end">${sumCost.toFixed(2)}</th>
-                <th class="text-end">${sumProfit.toFixed(2)}</th>
+                <th>المجموع</th><th></th><th></th><th class="text-end">${sumSell.toFixed(2)}</th><th></th><th class="text-end">${sumCost.toFixed(2)}</th><th class="text-end">${sumProfit.toFixed(2)}</th>
             </tr></tfoot></table></div>`;
             modalContent.innerHTML = html;
         } catch (err) {
@@ -477,17 +527,14 @@ document.addEventListener('DOMContentLoaded', function(){
     function openModal(invoiceId, invoiceCreatedAt) {
         modalTitle.textContent = 'تفاصيل الفاتورة #' + invoiceId;
         modalInvoiceInfo.textContent = 'تاريخ الفاتورة: ' + invoiceCreatedAt;
+        openInvoicePage.href = '<?php echo BASE_URL; ?>invoices_out/view_invoice_detaiels.php?id=' + encodeURIComponent(invoiceId);
         modal.style.display = 'flex';
         modal.setAttribute('aria-hidden','false');
         fetchInvoiceItems(invoiceId);
     }
-    function closeModalFn(){
-        modal.style.display = 'none';
-        modal.setAttribute('aria-hidden','true');
-        modalContent.innerHTML = '';
-    }
+    function closeModalFn(){ modal.style.display = 'none'; modal.setAttribute('aria-hidden','true'); modalContent.innerHTML = ''; }
 
-    document.querySelectorAll('.details-btn').forEach(btn=>{
+    qsa('.details-btn').forEach(btn=>{
         btn.addEventListener('click', function(){
             const id = this.dataset.invoiceId;
             const row = this.closest('tr');
@@ -499,7 +546,49 @@ document.addEventListener('DOMContentLoaded', function(){
     closeModal.addEventListener('click', closeModalFn);
     modal.addEventListener('click', function(e){ if (e.target === modal) closeModalFn(); });
 
-    function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replace(/[&<>\"']/g,function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'})[m]; }); }
+    // PRINT: only print period + table + totals
+    qs('#printBtn')?.addEventListener('click', function(){
+        const periodLabel = (qs('.page-header .subtitle') ? qs('.page-header .subtitle').innerText : (startIn.value + ' → ' + endIn.value));
+        const rows = [];
+        let grand = 0;
+        qsa('#reportTable tbody tr').forEach(tr=>{
+            const tds = tr.querySelectorAll('td');
+            if (!tds || tds.length < 5) return;
+            const idx = tds[0].innerText.trim();
+            const inv = tds[0] ? tds[0].innerText.trim() : '';
+            const dt = tds[1] ? tds[1].innerText.trim() : '';
+            const cust = tds[2] ? tds[2].innerText.trim() : '';
+            const totalTxt = tds[3] ? tds[3].innerText.replace(/[^\d.,-]/g,'').replace(/,/g,'').trim() : '0';
+            const totalVal = parseFloat(totalTxt) || 0;
+            grand += totalVal;
+            rows.push([idx, inv, dt, cust, totalVal.toFixed(2)]);
+        });
+
+        let html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>طباعة تقرير المبيعات</title>
+            <style>body{font-family:Arial;padding:18px;color:#111} h2{margin:0 0 8px} .meta{color:#555;margin-bottom:12px} table{width:100%;border-collapse:collapse;margin-top:8px} th,td{border:1px solid #ddd;padding:8px;text-align:right} thead th{background:#f6f8fb} tfoot td{font-weight:700}</style>
+            </head><body>`;
+        html += `<h2>تقرير الربح — ملخص الفواتير</h2><div class="meta">الفترة: <strong>${escapeHtml(startIn.value)} → ${escapeHtml(endIn.value)}</strong></div>`;
+        if (rows.length === 0) {
+            html += '<div>لا توجد فواتير لعرضها.</div>';
+        } else {
+            html += `<table><thead><tr><th>#</th><th>رقم الفاتورة</th><th>التاريخ</th><th>العميل</th><th>إجمالي الفاتورة</th></tr></thead><tbody>`;
+            rows.forEach(r => {
+                html += `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td><td>${escapeHtml(r[2])}</td><td>${escapeHtml(r[3])}</td><td style="text-align:right">${escapeHtml(r[4])} ج.م</td></tr>`;
+            });
+            html += `</tbody><tfoot><tr><td colspan="4" style="text-align:right">الإجمالي الكلي:</td><td style="text-align:right">${grand.toFixed(2)} ج.م</td></tr></tfoot></table>`;
+        }
+        html += `<div style="margin-top:18px;color:#666;font-size:13px">طُبع في: ${new Date().toLocaleString('ar-EG')}</div>`;
+        html += `</body></html>`;
+
+        const w = window.open('', '_blank', 'toolbar=0,location=0,menubar=0');
+        if (!w) { alert('يرجى السماح بفتح النوافذ المنبثقة للطباعة'); return; }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(()=> { w.print(); }, 350);
+    });
+
 });
 </script>
 

@@ -9,6 +9,11 @@ $expenses_list = [];
 $categories_list = [];
 $total_expenses_displayed = 0;
 
+// روابط مفيدة
+$add_expense_link = BASE_URL . "admin/add_expense.php";
+$edit_expense_link_base = BASE_URL . "admin/edit_expense.php";
+$back_link = BASE_URL . "user/welcome.php"; // زر العودة
+
 // القيم الافتراضية للفلاتر
 $start_date_filter = isset($_REQUEST['filter_start_date']) ? trim($_REQUEST['filter_start_date']) : '';
 $end_date_filter = isset($_REQUEST['filter_end_date']) ? trim($_REQUEST['filter_end_date']) : '';
@@ -48,11 +53,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_expense'])) {
             if ($stmt_delete->execute()) {
                 $_SESSION['message'] = ($stmt_delete->affected_rows > 0) ? "<div class='alert alert-success'>تم حذف المصروف بنجاح.</div>" : "<div class='alert alert-warning'>لم يتم العثور على المصروف أو لم يتم حذفه.</div>";
             } else {
-                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف المصروف: " . $stmt_delete->error . "</div>";
+                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف المصروف: " . htmlspecialchars($stmt_delete->error) . "</div>";
             }
             $stmt_delete->close();
         } else {
-            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف: " . $conn->error . "</div>";
+            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف: " . htmlspecialchars($conn->error) . "</div>";
         }
     }
     // PRG - إعادة تحميل الصفحة مع الحفاظ على الفلاتر
@@ -113,140 +118,160 @@ if ($stmt_select = $conn->prepare($sql_select_expenses)) {
             }
         }
     } else {
-        $message .= "<div class='alert alert-danger'>حدث خطأ أثناء جلب المصروفات: " . $stmt_select->error . "</div>";
+        $message .= "<div class='alert alert-danger'>حدث خطأ أثناء جلب المصروفات: " . htmlspecialchars($stmt_select->error) . "</div>";
     }
     $stmt_select->close();
 } else {
-    $message .= "<div class='alert alert-danger'>خطأ في تحضير استعلام جلب المصروفات: " . $conn->error . "</div>";
+    $message .= "<div class='alert alert-danger'>خطأ في تحضير استعلام جلب المصروفات: " . htmlspecialchars($conn->error) . "</div>";
 }
 
 $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
-$add_expense_link = BASE_URL . "admin/add_expense.php";
-$edit_expense_link_base = BASE_URL . "admin/edit_expense.php";
 
 require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
-<div class="container mt-5 pt-3">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="fas fa-receipt"></i> إدارة المصروفات</h1>
-        <a href="<?php echo $add_expense_link; ?>" class="btn btn-success"><i class="fas fa-plus-circle"></i> إضافة مصروف جديد</a>
-    </div>
+<!-- تخصيص مظهر الصفحة المحلي -->
+<style>
+    /* اجعل الجدول يملأ العرض المتاح ويكون أكثر راحة للقراءة */
+    .page-actions .btn { min-width: 140px; }
+    .expenses-card .card-header { background: linear-gradient(90deg, #0d6efd22, #0dcaf022); }
+    .expenses-card .table thead th { vertical-align: middle; }
+    .wide-table-wrapper { overflow-x: auto; }
+    .table-lg td, .table-lg th { padding: 0.85rem; }
+    @media (min-width: 992px) {
+        .content-max { max-width: 1200px; margin: 0 auto; }
+    }
+</style>
 
-    <?php echo $message; ?>
+<div class="container-fluid mt-4 pt-3">
+    <div class="content-max">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h1 class="h3 mb-0"><i class="fas fa-receipt"></i> إدارة المصروفات</h1>
+                <small class="text-muted">عرض وتصفية المصروفات المسجلة مع واجهة أبسط ومقروءة.</small>
+            </div>
+            <div class="page-actions d-flex gap-2">
+                <a href="<?php echo $back_link; ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> عودة</a>
+                <a href="<?php echo $add_expense_link; ?>" class="btn btn-success"><i class="fas fa-plus-circle"></i> إضافة مصروف جديد</a>
+            </div>
+        </div>
 
-    <div class="card mb-4 shadow-sm">
-        <div class="card-header">
-            <i class="fas fa-filter"></i> تصفية المصروفات
-        </div>
-        <div class="card-body">
-            <form action="<?php echo $current_page_url_for_forms; ?>" method="get" class="row gx-3 gy-2 align-items-end">
-                <div class="col-md-4">
-                    <label for="filter_start_date" class="form-label">من تاريخ:</label>
-                    <input type="date" class="form-control" id="filter_start_date" name="filter_start_date" value="<?php echo htmlspecialchars($start_date_filter); ?>">
-                </div>
-                <div class="col-md-4">
-                    <label for="filter_end_date" class="form-label">إلى تاريخ:</label>
-                    <input type="date" class="form-control" id="filter_end_date" name="filter_end_date" value="<?php echo htmlspecialchars($end_date_filter); ?>">
-                </div>
-                <div class="col-md-4">
-                    <label for="filter_category_id" class="form-label">حسب الفئة:</label>
-                    <select name="filter_category_id" id="filter_category_id" class="form-select">
-                        <option value="">-- كل الفئات --</option>
-                        <?php foreach ($categories_list as $category): ?>
-                            <option value="<?php echo $category['id']; ?>" <?php echo ($selected_category_id == $category['id']) ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($category['name']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-12 mt-3 text-center">
-                    <button type="submit" name="filter_expenses_btn" class="btn btn-primary"><i class="fas fa-search"></i> عرض</button>
-                    <a href="<?php echo $current_page_url_for_forms; ?>" class="btn btn-outline-secondary ms-2"><i class="fas fa-times"></i> مسح الفلتر</a>
-                </div>
-            </form>
-        </div>
-    </div>
+        <?php echo $message; ?>
 
-    <div class="card shadow">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <span>قائمة المصروفات
-            <?php
-                $filter_text_display = [];
-                if(!empty($start_date_filter)) { $filter_text_display[] = "من: " . htmlspecialchars($start_date_filter); }
-                if(!empty($end_date_filter)) { $filter_text_display[] = "إلى: " . htmlspecialchars($end_date_filter); }
-                if(!empty($selected_category_id) && !empty($categories_list)) {
-                    foreach($categories_list as $c_item) { if($c_item['id'] == $selected_category_id) {$filter_text_display[] = "فئة: " . htmlspecialchars($c_item['name']); break;}}
-                }
-                if(!empty($filter_text_display)) { echo " <small class='text-muted'>(" . implode("، ", $filter_text_display) . ")</small>";}
-            ?>
-            </span>
-            <span class="badge bg-danger rounded-pill fs-6">الإجمالي: <?php echo number_format($total_expenses_displayed, 2); ?> ج.م</span>
+        <div class="card mb-3 shadow-sm expenses-card">
+            <div class="card-header">
+                <i class="fas fa-filter"></i> تصفية المصروفات
+            </div>
+            <div class="card-body">
+                <form action="<?php echo $current_page_url_for_forms; ?>" method="get" class="row gx-3 gy-2 align-items-end">
+                    <div class="col-md-4">
+                        <label for="filter_start_date" class="form-label">من تاريخ:</label>
+                        <input type="date" class="form-control" id="filter_start_date" name="filter_start_date" value="<?php echo htmlspecialchars($start_date_filter); ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="filter_end_date" class="form-label">إلى تاريخ:</label>
+                        <input type="date" class="form-control" id="filter_end_date" name="filter_end_date" value="<?php echo htmlspecialchars($end_date_filter); ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="filter_category_id" class="form-label">حسب الفئة:</label>
+                        <select name="filter_category_id" id="filter_category_id" class="form-select">
+                            <option value="">-- كل الفئات --</option>
+                            <?php foreach ($categories_list as $category): ?>
+                                <option value="<?php echo $category['id']; ?>" <?php echo ($selected_category_id == $category['id']) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($category['name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12 text-end mt-3">
+                        <button type="submit" name="filter_expenses_btn" class="btn btn-primary"><i class="fas fa-search"></i> عرض</button>
+                        <a href="<?php echo $current_page_url_for_forms; ?>" class="btn btn-outline-secondary ms-2"><i class="fas fa-times"></i> مسح الفلتر</a>
+                    </div>
+                </form>
+            </div>
         </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover table-bordered align-middle">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>#</th>
-                            <th>التاريخ</th>
-                            <th>البيان/الوصف</th>
-                            <th class="text-end">القيمة</th>
-                            <th>الفئة</th>
-                            <th>ملاحظات</th>
-                            <th>أضيف بواسطة</th>
-                            <th>تاريخ التسجيل</th>
-                            <th class="text-center">إجراءات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (!empty($expenses_list)): ?>
-                            <?php $counter = 1; ?>
-                            <?php foreach($expenses_list as $expense): ?>
+
+        <div class="card shadow-lg expenses-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>قائمة المصروفات</strong>
+                    <?php
+                        $filter_text_display = [];
+                        if(!empty($start_date_filter)) { $filter_text_display[] = "من: " . htmlspecialchars($start_date_filter); }
+                        if(!empty($end_date_filter)) { $filter_text_display[] = "إلى: " . htmlspecialchars($end_date_filter); }
+                        if(!empty($selected_category_id) && !empty($categories_list)) {
+                            foreach($categories_list as $c_item) { if($c_item['id'] == $selected_category_id) {$filter_text_display[] = "فئة: " . htmlspecialchars($c_item['name']); break;}}
+                        }
+                        if(!empty($filter_text_display)) { echo " <small class='text-muted'>(" . implode("، ", $filter_text_display) . ")</small>";}
+                    ?>
+                </div>
+                <span class="badge bg-danger rounded-pill fs-6">الإجمالي: <?php echo number_format($total_expenses_displayed, 2); ?> ج.م</span>
+            </div>
+            <div class="card-body">
+                <div class="wide-table-wrapper">
+                    <table class="table table-striped table-hover table-bordered align-middle table-lg w-100">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width:60px">#</th>
+                                <th style="width:120px">التاريخ</th>
+                                <th>البيان/الوصف</th>
+                                <th style="width:130px" class="text-end">القيمة</th>
+                                <th style="width:140px">الفئة</th>
+                                <th>ملاحظات</th>
+                                <th style="width:140px">أضيف بواسطة</th>
+                                <th style="width:160px">تاريخ التسجيل</th>
+                                <th style="width:120px" class="text-center">إجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (!empty($expenses_list)): ?>
+                                <?php $counter = 1; ?>
+                                <?php foreach($expenses_list as $expense): ?>
+                                    <tr>
+                                        <td><?php echo $counter++; ?></td>
+                                        <td><?php echo date('Y-m-d', strtotime($expense["expense_date"])); ?></td>
+                                        <td><?php echo htmlspecialchars($expense["description"]); ?></td>
+                                        <td class="text-end fw-bold"><?php echo number_format(floatval($expense["amount"]), 2); ?> ج.م</td>
+                                        <td><?php echo htmlspecialchars($expense["category_name"] ?? '-'); ?></td>
+                                        <td><?php echo !empty($expense["notes"]) ? nl2br(htmlspecialchars($expense["notes"])) : '-'; ?></td>
+                                        <td><?php echo htmlspecialchars($expense["creator_name"] ?? 'غير محدد'); ?></td>
+                                        <td><?php echo date('Y-m-d H:i', strtotime($expense["created_at"])); ?></td>
+                                        <td class="text-center">
+                                            <form action="<?php echo $edit_expense_link_base; ?>" method="post" class="d-inline">
+                                                <input type="hidden" name="expense_id_to_edit" value="<?php echo $expense["id"]; ?>">
+                                                <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                                <button type="submit" class="btn btn-warning btn-sm" title="تعديل المصروف">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                            </form>
+                                            <form action="<?php echo $current_page_url_for_forms; ?>" method="post" class="d-inline ms-1">
+                                                <input type="hidden" name="expense_id_to_delete" value="<?php echo $expense["id"]; ?>">
+                                                <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                                <input type="hidden" name="filter_start_date" value="<?php echo htmlspecialchars($start_date_filter); ?>">
+                                                <input type="hidden" name="filter_end_date" value="<?php echo htmlspecialchars($end_date_filter); ?>">
+                                                <input type="hidden" name="filter_category_id" value="<?php echo htmlspecialchars($selected_category_id); ?>">
+                                                <button type="submit" name="delete_expense" class="btn btn-danger btn-sm"
+                                                        onclick="return confirm('هل أنت متأكد من حذف هذا المصروف؟');"
+                                                        title="حذف المصروف">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
                                 <tr>
-                                    <td><?php echo $counter++; ?></td>
-                                    <td><?php echo date('Y-m-d', strtotime($expense["expense_date"])); ?></td>
-                                    <td><?php echo htmlspecialchars($expense["description"]); ?></td>
-                                    <td class="text-end fw-bold"><?php echo number_format(floatval($expense["amount"]), 2); ?> ج.م</td>
-                                    <td><?php echo htmlspecialchars($expense["category_name"] ?? '-'); ?></td>
-                                    <td><?php echo !empty($expense["notes"]) ? nl2br(htmlspecialchars($expense["notes"])) : '-'; ?></td>
-                                    <td><?php echo htmlspecialchars($expense["creator_name"] ?? 'غير محدد'); ?></td>
-                                    <td><?php echo date('Y-m-d H:i', strtotime($expense["created_at"])); ?></td>
-                                    <td class="text-center">
-                                        <form action="<?php echo $edit_expense_link_base; ?>" method="post" class="d-inline">
-                                            <input type="hidden" name="expense_id_to_edit" value="<?php echo $expense["id"]; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                            <button type="submit" class="btn btn-warning btn-sm" title="تعديل المصروف">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </form>
-                                        <form action="<?php echo $current_page_url_for_forms; ?>" method="post" class="d-inline ms-1">
-                                            <input type="hidden" name="expense_id_to_delete" value="<?php echo $expense["id"]; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                            <input type="hidden" name="filter_start_date" value="<?php echo htmlspecialchars($start_date_filter); ?>">
-                                            <input type="hidden" name="filter_end_date" value="<?php echo htmlspecialchars($end_date_filter); ?>">
-                                            <input type="hidden" name="filter_category_id" value="<?php echo htmlspecialchars($selected_category_id); ?>">
-                                            <button type="submit" name="delete_expense" class="btn btn-danger btn-sm"
-                                                    onclick="return confirm('هل أنت متأكد من حذف هذا المصروف؟');"
-                                                    title="حذف المصروف">
-                                                <i class="fas fa-trash-alt"></i>
-                                            </button>
-                                        </form>
+                                    <td colspan="9" class="text-center"> لا توجد مصروفات مسجلة تطابق معايير البحث الحالية.
+                                        <?php if(empty($start_date_filter) && empty($end_date_filter) && empty($selected_category_id)): ?>
+                                            <a href="<?php echo $add_expense_link; ?>">أضف مصروفاً الآن!</a>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="9" class="text-center"> لا توجد مصروفات مسجلة تطابق معايير البحث الحالية.
-                                    <?php if(empty($start_date_filter) && empty($end_date_filter) && empty($selected_category_id)): ?>
-                                        <a href="<?php echo $add_expense_link; ?>">أضف مصروفاً الآن!</a>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>

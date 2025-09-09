@@ -128,7 +128,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
     <div class="row justify-content-center">
         <div class="col-md-8 col-lg-7">
             <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white text-center">
+                <div class="card-header bg-primary note-text text-center">
                     <h2><i class="fas fa-box-open"></i> إضافة منتج جديد</h2>
                 </div>
                 <div class="card-body p-4">

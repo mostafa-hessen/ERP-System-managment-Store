@@ -150,7 +150,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
         <div class="col-md-8 col-lg-7">
             <?php if ($product_id > 0) : ?>
                 <div class="card shadow-sm">
-                    <div class="card-header bg-warning text-dark text-center">
+                    <div class="card-header bg-warning text-dak text-center">
                         <h2><i class="fas fa-edit"></i> تعديل المنتج (ID: <?php echo $product_id; ?> - <?php echo htmlspecialchars($name); ?>)</h2>
                     </div>
                     <div class="card-body p-4">
@@ -191,7 +191,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                     <label for="reorder_level" class="form-label"><i class="fas fa-exclamation-triangle"></i> حد إعادة الطلب:</label>
                                     <input type="number" name="reorder_level" id="reorder_level" class="form-control <?php echo (!empty($reorder_level_err)) ? 'is-invalid' : ''; ?>" value="<?php echo htmlspecialchars(is_numeric($reorder_level) ? number_format($reorder_level, 2, '.', '') : $reorder_level); ?>" step="0.01" min="0">
                                     <span class="invalid-feedback"><?php echo $reorder_level_err; ?></span>
-                                    <small class="form-text text-muted">تنبيه إذا قل الرصيد عن هذا الحد.</small>
+                                    <small class="form-text note-text">تنبيه إذا قل الرصيد عن هذا الحد.</small>
                                 </div>
 
                                 <!-- أسعار الشراء والبيع -->
@@ -199,13 +199,14 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                     <label for="cost_price" class="form-label"><i class="fas fa-dollar-sign"></i> سعر الشراء (اختياري):</label>
                                     <input type="number" name="cost_price" id="cost_price" class="form-control"
                                         <?php echo (!empty($cost_price)) ? 'is-invalid' : ''; ?>" value="<?php echo htmlspecialchars(is_numeric($cost_price) ? number_format($cost_price, 2, '.', '') : $cost_price); ?>" step="0.01" min="0">
-                                    <small class="form-text text-muted">اتركه فارغًا إذا لا تريد تغييره.</small>
+                                    <small class="form-text note-text">اتركه فارغًا إذا لا تريد تغييره.</small>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="selling_price" class="form-label"><i class="fas fa-dollar-sign"></i> سعر البيع (اختياري):</label>
                                     <input type="number" name="selling_price" id="selling_price" class="form-control"
 
-                                        <?php echo (!empty($selling_price)) ? 'is-invalid' : ''; ?>" value="<?php echo htmlspecialchars(is_numeric($selling_price) ? number_format($selling_price, 2, '.', '') : $selling_price); ?>" step="0.01" min="0"> <small class="form-text text-muted">اتركه فارغًا إذا لا تريد تغييره.</small>
+                                        <?php echo (!empty($selling_price)) ? 'is-invalid' : ''; ?>" value="<?php echo htmlspecialchars(is_numeric($selling_price) ? number_format($selling_price, 2, '.', '') : $selling_price); ?>" step="0.01" min="0"> 
+                                        <small class="form-text note-text">اتركه فارغًا إذا لا تريد تغييره.</small>
                                 </div>
                             </div>
 
