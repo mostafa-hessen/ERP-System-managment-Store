@@ -158,7 +158,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
 <div class="container mt-5 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="fas fa-truck-loading"></i> الفواتير غير المستلمة</h1>
-        <a href="<?php echo $delivered_invoices_link; ?>" class="btn btn-outline-success"><i class="fas fa-check-double"></i> عرض الفواتير المستلمة</a>
+        <a href="<?php echo $delivered_invoices_link; ?>" class="btn btn-success"><i class="fas fa-check-double"></i> عرض الفواتير المستلمة</a>
     </div>
 
     <?php echo $message; ?>

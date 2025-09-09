@@ -67,218 +67,36 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
 ?>
 
 <style>
-/* ===== Scoped improvements for dashboard stats (inside .welcome) ===== */
-.theme-toggle {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            color: var(--text);
-            padding: 8px 16px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all var(--fast);
-        }
+    /* ===== Scoped improvements for dashboard stats (inside .welcome) ===== */
 
-        .theme-toggle:hover {
-            background: var(--surface-2);
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 40px;
-        }
-
-        .stat-card {
-            background: var(--surface);
-            border-radius: var(--radius);
-            padding: 20px;
-            box-shadow: var(--shadow-1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all var(--normal);
-            border: 1px solid transparent;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-2);
-            border-color: var(--primary);
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 100%;
-            height: 4px;
-            background: var(--grad-1);
-            opacity: 0;
-            transition: opacity var(--normal);
-        }
-
-        .stat-card:hover::before {
-            opacity: 1;
-        }
-
-        .stat-left {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .stat-icon {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-        }
-
-        .icon-primary {
-            background: linear-gradient(135deg, rgba(11, 132, 255, 0.15), rgba(11, 132, 255, 0.25));
-            color: var(--primary);
-        }
-
-        .icon-secondary {
-            background: linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(124, 58, 237, 0.25));
-            color: var(--accent);
-        }
-
-        .icon-success {
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.25));
-            color: var(--teal);
-        }
-
-        .icon-warning {
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.25));
-            color: var(--amber);
-        }
-
-        .icon-danger {
-            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.25));
-            color: var(--rose);
-        }
-
-        .stat-body {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .label {
-            font-size: 14px;
-            color: var(--muted);
-            margin-bottom: 5px;
-        }
-
-        .value {
-            font-size: 24px;
-            font-weight: 700;
-            color: var(--text);
-        }
-
-        .view-page a {
-            color: var(--primary);
-            text-decoration: none;
-            font-size: 13px;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            transition: color var(--fast);
-        }
-
-        .view-page a:hover {
-            color: var(--primary-600);
-        }
-
-        .stat-card.low {
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { box-shadow: var(--shadow-1); }
-            50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2); }
-            100% { box-shadow: var(--shadow-1); }
-        }
-
-        /* التكيف مع الشاشات الصغيرة */
-        @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .stat-card {
-                padding: 15px;
-            }
-            
-            .stat-icon {
-                width: 50px;
-                height: 50px;
-                font-size: 20px;
-            }
-            
-            .value {
-                font-size: 20px;
-            }
-        }
-
-/* low table styling (scoped) */
-.welcome .low-table {
-  width:100%;
-  border-collapse:collapse;
-  margin-top:12px;
-  font-size:14px;
-}
-.welcome .low-table th, .welcome .low-table td {
-  padding:10px 12px;
-  text-align:right;
-  border-bottom:1px solid rgba(2,6,23,0.06);
-}
-.welcome .low-table tr.low-row {
-  background: linear-gradient(90deg, rgba(255,240,240,0.9), rgba(255,248,248,0.95));
-  color: #b91c1c;
-  font-weight:700;
-}
-
-.welcome .view-page a{
-    color: var(--text) !important;
-    /* background-color: #b91c1c; */
-}
-/* responsive: small screens stack content vertically (nice spacing) */
-@media (max-width: 720px) {
-  .welcome .stat-card { min-height: auto; padding:12px; }
-  .welcome .stat-icon { width:56px; height:56px; font-size:20px; border-radius:12px; }
-  .welcome .stat-action { width:100%; justify-content:center; }
-}
-
- </style>
+</style>
 <div class="container welcome mt-5">
     <!-- الوصول السريع -->
     <div class="card dashboard-card fade-in">
         <div class="card-header">الوصول السريع</div>
         <div class="card-body">
-            <div class="d-flex flex-wrap"> <a href="<?php echo BASE_URL; ?>invoices_out/create_invoice.php" class="btn btn-primary btn-action"> <i class="fas fa-plus"></i> إضافة فاتورة بيع </a> <a href="<?php echo BASE_URL; ?>admin/manage_customer.php" class="btn btn-success btn-action"> <i class="fas fa-user-plus"></i> إضافة عميل </a> <a href="<?php echo BASE_URL; ?>admin/manage_products.php" class="btn btn-info btn-action"> <i class="fas fa-box"></i> إضافة منتج </a> <a href="<?php echo BASE_URL; ?>admin/pending_invoices.php" class="btn btn-warning btn-action"> <i class="fas fa-file-invoice"></i> الفواتير غير المسلمة </a> <a href="<?php echo BASE_URL; ?>admin/net_profit_report.php" class="btn btn-danger btn-action"> <i class="fas fa-chart-pie"></i> تقرير الأرباح </a> </div>
+            <div class="d-flex flex-wrap w-100">
+               
+                    
+                    <a href="<?php echo BASE_URL; ?>admin/manage_customer.php" class="btn btn-success btn-action"> <i class="fas fa-user-plus"></i> إضافة عميل </a> 
+                    <a href="<?php echo BASE_URL; ?>admin/manage_products.php" class="btn btn-info btn-action"> <i class="fas fa-box"></i> إضافة منتج </a> 
+                     <a  href="<?php echo BASE_URL; ?>invoices_out/create_invoice.php" class="btn btn-primary btn-action
+                     flex-grow-1">
+                    <i class="fas fa-plus"></i> إضافة فاتورة بيع </a>
+                    <a href="<?php echo BASE_URL; ?>admin/pending_invoices.php" class="btn btn-warning btn-action"> <i class="fas fa-file-invoice"></i> الفواتير غير المسلمة </a> <a href="<?php echo BASE_URL; ?>admin/net_profit_report.php" class="btn btn-danger btn-action"> <i class="fas fa-chart-pie"></i> تقرير الأرباح </a>
+            </div>
         </div>
     </div>
 
 
-    <div class="stats-grid">
+    <div class="stats-grid mt-3">
         <!-- إجمالي العملاء -->
         <div class="stat-card">
             <div class="stat-left">
                 <div class="stat-icon icon-primary"><i class="fas fa-user"></i></div>
                 <div class="stat-body">
-                    <div class="label">إجمالي العملاء</div>
-                    <div class="value"><?php echo number_format($total_customers); ?></div>
+                    <div class="value">إجمالي العملاء</div>
+                    <div class=" label"><?php echo number_format($total_customers); ?></div>
                 </div>
             </div>
             <div class="view-page"><a href="<?php echo BASE_URL; ?>admin/manage_customer.php" class="small text-muted">عرض</a></div>
@@ -289,9 +107,9 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
             <div class="stat-left">
                 <div class="stat-icon <?php echo ($total_low_stock_items > 0 ? 'icon-danger' : 'icon-secondary'); ?>"><i class="fas fa-battery-quarter"></i></div>
                 <div class="stat-body">
-                    <div class="label">منتجات منخفضة الرصيد</div>
-                    <div class="value"><?php echo number_format($total_low_stock_items); ?></div>
-                  
+                    <div class="value">منتجات منخفضة الرصيد</div>
+                    <div class="label"><?php echo number_format($total_low_stock_items); ?></div>
+
                 </div>
             </div>
             <div class="view-page"><a href="<?php echo BASE_URL; ?>admin/low_stock_report.php" class="small text-muted">تقرير</a></div>
@@ -302,8 +120,8 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
             <div class="stat-left">
                 <div class="stat-icon icon-success"><i class="fas fa-money-bill-wave"></i></div>
                 <div class="stat-body">
-                    <div class="label">مبيعات الشهر</div>
-                    <div class="value"><?php echo number_format($current_month_sales, 2); ?> ج.م</div>
+                    <div class="value">مبيعات الشهر</div>
+                    <div class="label"><?php echo number_format($current_month_sales, 2); ?> ج.م</div>
                 </div>
             </div>
             <div class="view-page"><a href="<?php echo BASE_URL; ?>admin/sales_report_period.php" class="small text-muted">تفاصيل</a></div>
@@ -314,8 +132,8 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
             <div class="stat-left">
                 <div class="stat-icon icon-warning"><i class="fas fa-truck-loading"></i></div>
                 <div class="stat-body">
-                    <div class="label">فواتير لم تُسلم</div>
-                    <div class="value"><?php echo number_format($total_pending_sales_invoices); ?></div>
+                    <div class="value">فواتير لم تُسلم</div>
+                    <div class="label"><?php echo number_format($total_pending_sales_invoices); ?></div>
                 </div>
             </div>
             <div class="view-page"><a href="<?php echo BASE_URL; ?>admin/pending_invoices.php" class="small text-muted">عرض</a></div>
@@ -326,8 +144,8 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
             <div class="stat-left">
                 <div class="stat-icon icon-danger"><i class="fas fa-receipt"></i></div>
                 <div class="stat-body">
-                    <div class="label">مصاريف الشهر</div>
-                    <div class="value"><?php echo number_format($current_month_expenses, 2); ?> ج.م</div>
+                    <div class="value">مصاريف الشهر</div>
+                    <div class="label"><?php echo number_format($current_month_expenses, 2); ?> ج.م</div>
                 </div>
             </div>
             <div class="view-page"><a href="<?php echo BASE_URL; ?>admin/manage_expenses.php" class="small text-muted">عرض</a></div>
@@ -338,8 +156,8 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
             <div class="stat-left">
                 <div class="stat-icon icon-primary"><i class="fas fa-box"></i></div>
                 <div class="stat-body">
-                    <div class="label">إجمالي المنتجات</div>
-                    <div class="value"><?php echo number_format($total_products); ?></div>
+                    <div class="value">إجمالي المنتجات</div>
+                    <div class="label"><?php echo number_format($total_products); ?></div>
                 </div>
             </div>
             <div class="view-page"><a href="<?php echo BASE_URL; ?>admin/manage_products.php" class="small text-muted">عرض</a></div>
@@ -429,12 +247,12 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
                         <i class="fas fa-plus me-2"></i>
                         اضافه منتج جديد للمخزن
                     </a>
-                    <a href="<?php echo BASE_URL; ?>admin/stock_report.php" class="btn btn-outline-success text-start">
+                    <!-- <a href="<?php echo BASE_URL; ?>admin/stock_report.php" class="btn btn-outline-success text-start">
                         <i class="fas fa-chart-bar me-2"></i> تقارير المخزون
-                    </a>
+                    </a> -->
 
-                        <a href="<?php echo BASE_URL; ?>admin/stock_valuation_report.php" class="btn btn-outline-success text-start">
-                        <i class="fas fa-balance-scale me-2"></i>  تقرير تقييم المخزون 
+                    <a href="<?php echo BASE_URL; ?>admin/stock_valuation_report.php" class="btn btn-outline-success text-start">
+                        <i class="fas fa-balance-scale me-2"></i> تقرير تقييم المخزون
                     </a>
                 </div>
             </div>
@@ -475,7 +293,7 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
                     <a href="<?php echo BASE_URL; ?>admin/manage_expenses.php" class="btn btn-outline-danger text-start">
                         <i class="fas fa-balance-scale me-2"></i> تقرير المصروفات
                     </a>
-                
+
 
                     <a href="<?php echo BASE_URL; ?>admin/manage_expense_categories.php"
                         class="btn btn-outline-danger text-start">

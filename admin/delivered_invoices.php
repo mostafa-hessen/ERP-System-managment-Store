@@ -163,7 +163,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="fas fa-check-double"></i> الفواتير المستلمة</h1>
-        <a href="<?php echo $pending_invoices_link; ?>" class="btn btn-outline-warning"><i class="fas fa-truck-loading"></i> عرض الفواتير غير المستلمة</a>
+        <a href="<?php echo $pending_invoices_link; ?>" class="btn btn-warning"><i class="fas fa-truck-loading"></i> عرض الفواتير غير المستلمة</a>
     </div>
 
     <?php echo $message; // رسالة من العمليات السابقة ?>
@@ -180,7 +180,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                     <label class="form-label small mb-1" for="q_mobile">بحث برقم هاتف العميل</label>
                     <input type="text" name="q_mobile" id="q_mobile" class="form-control" placeholder="مثال: 011xxxxxxxx" value="<?php echo htmlspecialchars($search_mobile); ?>">
                 </div>
-                <div class="col-md-3  mt-4">
+                <!-- <div class="col-md-3  mt-4">
                     <label class="form-label small mb-1" for="invoice_group_filter">مجموعة الفاتورة</label>
                     <select name="invoice_group_filter" id="invoice_group_filter" class="form-select">
                         <option value="" <?php echo empty($selected_group) ? 'selected' : ''; ?>>-- كل المجموعات --</option>
@@ -188,7 +188,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                             <option value="<?php echo $g; ?>" <?php echo ($selected_group == $g) ? 'selected' : ''; ?>>Group <?php echo $i; ?></option>
                         <?php endfor; ?>
                     </select>
-                </div>
+                </div> -->
 
                 <div class="col-md-3 d-flex gap-2 align-items-end mt-5">
                     <button type="submit" name="search" class="btn btn-primary w-100"><i class="fas fa-search me-2"></i>بحث / تصفية</button>

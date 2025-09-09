@@ -1,597 +1,590 @@
 <?php
-// view_purchase_invoice.php (معدل لتسهيل إضافة بنود + بحث منتجات + تغيير حالة الفاتورة)
-$page_title = "تفاصيل فاتورة المشتريات";
-$class_dashboard = "active";
-require_once dirname(__DIR__) . '/config.php';
-require_once BASE_DIR . 'partials/session_admin.php';
-require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/sidebar.php';
+// admin/view_purchase_invoice_quick.php
+// واجهة محررة لفاتورة مشتريات - مُحدَّثة حسب طلبك
+// - بحث المنتجات يعمل
+// - لا توجد إضافة مورد من الصفحة (يُفترض أن الفاتورة مرتبطة بمورد محدد من خارج الصفحة)
+// - حالة الفاتورة تعرض أزرار (radio-like) أنيقة بدلاً من select
+// - بنود الفاتورة تعرض: المنتج، الكمية، سعر الشراء (قابل للتعديل، افتراضي آخر سعر)، سعر البيع (قابل للتعديل)، وإجمالي حسب سعر الشراء
+// - الفاتورة تُنشأ كـ مؤجلة (pending) بشكل افتراضي ولا تؤثر على المخزون حتى تصبح fully_received
+// - يمكن اختيار المنتجات حتى لو كانت "نفذ" (حتى صفحة التوريد تسمح بإضافة مخزون)
+// - نافذة تأكيد (popup) لإتمام الفاتورة، وزر تفريغ السلة
 
-$message = "";
-$invoice_id = 0;
-$purchase_invoice_data = null;
-$purchase_invoice_items = [];
-$products_list = [];
-$invoice_total_calculated = 0;
+$page_title = "فاتورة مشتريات - سريع";
+ob_start();
 
-// --- ترجمة الحالة ---
-$status_labels = [
-    'pending' => 'قيد الانتظار',
-    'partial_received' => 'تم الاستلام جزئياً',
-    'fully_received' => 'تم الاستلام بالكامل',
-    'cancelled' => 'ملغاة'
-];
-
-// جلب رسالة من الجلسة (PRG)
-if (isset($_SESSION['message'])) {
-    $message = $_SESSION['message'];
-    unset($_SESSION['message']);
+if (file_exists(dirname(__DIR__) . '/config.php')) {
+    require_once dirname(__DIR__) . '/config.php';
+} elseif (file_exists(dirname(dirname(__DIR__)) . '/config.php')) {
+    require_once dirname(dirname(__DIR__)) . '/config.php';
+} else {
+    http_response_code(500);
+    echo "خطأ داخلي: إعدادات غير موجودة.";
+    exit;
 }
+if (!isset($conn) || !$conn) { echo "خطأ في الاتصال بقاعدة البيانات."; exit; }
 
-// CSRF token
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+function e($s){ return htmlspecialchars($s ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+
+// CSRF
+if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 $csrf_token = $_SESSION['csrf_token'];
 
-// التحقق من id الفاتورة
+// Helpers
+function json_out($arr){ header('Content-Type: application/json; charset=utf-8'); echo json_encode($arr, JSON_UNESCAPED_UNICODE); exit; }
+function get_next_purchase_invoice_id($conn) {
+    $db = null;
+    $res = $conn->query("SELECT DATABASE() as db");
+    if ($res) { $row = $res->fetch_assoc(); $db = $row['db']; $res->free(); }
+    if (!$db) return null;
+    $stmt = $conn->prepare("SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'purchase_invoices' LIMIT 1");
+    if (!$stmt) return null;
+    $stmt->bind_param("s", $db); $stmt->execute();
+    $r = $stmt->get_result()->fetch_assoc(); $stmt->close();
+    return $r['AUTO_INCREMENT'] ?? null;
+}
+
+// ---------------- AJAX endpoints (reuse some endpoints from النسخة السابقة)
+if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
+    header('Content-Type: application/json; charset=utf-8');
+    $q = trim($_GET['q'] ?? '');
+    $out = [];
+    if ($q === '') {
+        $stmt = $conn->prepare("SELECT id, product_code, name, selling_price, cost_price, current_stock, unit_of_measure FROM products ORDER BY name LIMIT 1000");
+        $stmt->execute(); $res = $stmt->get_result();
+        while ($r = $res->fetch_assoc()) $out[] = $r; $stmt->close();
+    } else {
+        $like = "%$q%";
+        $stmt = $conn->prepare("SELECT id, product_code, name, selling_price, cost_price, current_stock, unit_of_measure FROM products WHERE name LIKE ? OR product_code LIKE ? ORDER BY name LIMIT 1000");
+        $stmt->bind_param("ss", $like, $like);
+        $stmt->execute(); $res = $stmt->get_result();
+        while ($r = $res->fetch_assoc()) $out[] = $r; $stmt->close();
+    }
+    json_out(['ok'=>true,'results'=>$out]);
+}
+
+// Add item to existing invoice (AJAX)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_item_ajax') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success'=>false,'message'=>'CSRF']);
+    $invoice_id = intval($_POST['invoice_id'] ?? 0);
+    $product_id = intval($_POST['product_id'] ?? 0);
+    $qty = floatval($_POST['quantity'] ?? 0);
+    $cost = floatval($_POST['cost_price'] ?? 0);
+    $selling = floatval($_POST['selling_price'] ?? 0);
+    if ($invoice_id <=0 || $product_id<=0 || $qty<=0) json_out(['success'=>false,'message'=>'بيانات غير صحيحة']);
+    try {
+        $conn->begin_transaction();
+        $total = $qty * $cost;
+        $st = $conn->prepare("INSERT INTO purchase_invoice_items (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+        $st->bind_param("iiddd", $invoice_id, $product_id, $qty, $cost, $total);
+        if (!$st->execute()) { $conn->rollback(); json_out(['success'=>false,'message'=>'فشل الإدخال: '.$st->error]); }
+        $new_item_id = $conn->insert_id; $st->close();
+
+        // update invoice total
+        $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
+        $st_sum->bind_param("i", $invoice_id); $st_sum->execute(); $res = $st_sum->get_result()->fetch_assoc(); $st_sum->close();
+        $grand_total = floatval($res['grand_total']);
+        $st_up = $conn->prepare("UPDATE purchase_invoices SET total_amount = ? WHERE id = ?");
+        $st_up->bind_param("di", $grand_total, $invoice_id); $st_up->execute(); $st_up->close();
+
+        $conn->commit();
+        // return inserted item
+        $st_item = $conn->prepare("SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost, p.product_code, p.name as product_name, p.unit_of_measure FROM purchase_invoice_items p_item JOIN products p ON p_item.product_id = p.id WHERE p_item.id = ?");
+        $st_item->bind_param("i", $new_item_id); $st_item->execute(); $item_row = $st_item->get_result()->fetch_assoc(); $st_item->close();
+        json_out(['success'=>true,'message'=>'تم الإضافة','item'=>$item_row,'grand_total'=>$grand_total]);
+    } catch (Exception $ex) {
+        if ($conn->in_transaction) $conn->rollback(); json_out(['success'=>false,'message'=>'خطأ: '.$ex->getMessage()]);
+    }
+}
+
+// Update item AJAX (edit qty, cost, selling)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_item_ajax') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success'=>false,'message'=>'CSRF']);
+    $item_id = intval($_POST['item_id'] ?? 0);
+    $qty = floatval($_POST['quantity'] ?? 0);
+    $cost = floatval($_POST['cost_price'] ?? 0);
+    $selling = floatval($_POST['selling_price'] ?? 0);
+    if ($item_id<=0 || $qty<0) json_out(['success'=>false,'message'=>'بيانات غير صحيحة']);
+    try {
+        $total = $qty * $cost;
+        $st = $conn->prepare("UPDATE purchase_invoice_items SET quantity = ?, cost_price_per_unit = ?, total_cost = ?, updated_at = NOW() WHERE id = ?");
+        $st->bind_param("dddi", $qty, $cost, $total, $item_id);
+        if (!$st->execute()) json_out(['success'=>false,'message'=>'فشل التحديث: '.$st->error]);
+        $st->close();
+
+        // update selling price in invoice_out_items? No - this table belongs to purchases; selling price is per product, update products.selling_price
+        if ($selling >= 0) {
+            // update product selling price to the edited value (optional)
+            $stp = $conn->prepare("UPDATE products SET selling_price = ? WHERE id = (SELECT product_id FROM purchase_invoice_items WHERE id = ? LIMIT 1)");
+            if ($stp) { $stp->bind_param("di", $selling, $item_id); $stp->execute(); $stp->close(); }
+        }
+
+        // recalc invoice total
+        $st_get = $conn->prepare("SELECT purchase_invoice_id FROM purchase_invoice_items WHERE id = ? LIMIT 1");
+        $st_get->bind_param("i", $item_id); $st_get->execute(); $rid = $st_get->get_result()->fetch_assoc(); $st_get->close();
+        $invoice_id = intval($rid['purchase_invoice_id'] ?? 0);
+
+        $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
+        $st_sum->bind_param("i", $invoice_id); $st_sum->execute(); $res = $st_sum->get_result()->fetch_assoc(); $st_sum->close();
+        $grand_total = floatval($res['grand_total']);
+
+        $st_up = $conn->prepare("UPDATE purchase_invoices SET total_amount = ? WHERE id = ?");
+        $st_up->bind_param("di", $grand_total, $invoice_id); $st_up->execute(); $st_up->close();
+
+        json_out(['success'=>true,'message'=>'تم التحديث','total_cost'=>$total,'grand_total'=>$grand_total]);
+    } catch (Exception $ex) { json_out(['success'=>false,'message'=>'خطأ: '.$ex->getMessage()]); }
+}
+
+// Delete item AJAX
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_item_ajax') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success'=>false,'message'=>'CSRF']);
+    $item_id = intval($_POST['item_id'] ?? 0);
+    if ($item_id<=0) json_out(['success'=>false,'message'=>'بيانات غير صحيحة']);
+    try {
+        $stg = $conn->prepare("SELECT purchase_invoice_id FROM purchase_invoice_items WHERE id = ? LIMIT 1");
+        $stg->bind_param("i", $item_id); $stg->execute(); $r = $stg->get_result()->fetch_assoc(); $stg->close();
+        if (!$r) json_out(['success'=>false,'message'=>'البند غير موجود']);
+        $invoice_id = intval($r['purchase_invoice_id']);
+        $std = $conn->prepare("DELETE FROM purchase_invoice_items WHERE id = ?"); $std->bind_param("i", $item_id);
+        if (!$std->execute()) json_out(['success'=>false,'message'=>'فشل الحذف: '.$std->error]); $std->close();
+        $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
+        $st_sum->bind_param("i", $invoice_id); $st_sum->execute(); $res = $st_sum->get_result()->fetch_assoc(); $st_sum->close();
+        $grand_total = floatval($res['grand_total']);
+        $st_up = $conn->prepare("UPDATE purchase_invoices SET total_amount = ? WHERE id = ?"); $st_up->bind_param("di", $grand_total, $invoice_id); $st_up->execute(); $st_up->close();
+        json_out(['success'=>true,'message'=>'تم الحذف','grand_total'=>$grand_total]);
+    } catch (Exception $ex) { json_out(['success'=>false,'message'=>'خطأ: '.$ex->getMessage()]); }
+}
+
+// Change invoice status (AJAX) - updates purchase_invoices.status and if turning to fully_received, update stocks
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'change_status_ajax') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success'=>false,'message'=>'CSRF']);
+    $invoice_id = intval($_POST['invoice_id'] ?? 0);
+    $new_status = $_POST['new_status'] ?? '';
+    $allowed = ['pending','partial_received','fully_received','cancelled'];
+    if ($invoice_id<=0 || !in_array($new_status,$allowed)) json_out(['success'=>false,'message'=>'بيانات غير صحيحة']);
+    try {
+        $conn->begin_transaction();
+        // fetch previous
+        $stmt_prev = $conn->prepare("SELECT status FROM purchase_invoices WHERE id = ? LIMIT 1"); $stmt_prev->bind_param("i", $invoice_id); $stmt_prev->execute(); $prev = $stmt_prev->get_result()->fetch_assoc(); $stmt_prev->close();
+        $prev_status = $prev['status'] ?? null;
+        $st = $conn->prepare("UPDATE purchase_invoices SET status = ?, updated_at = NOW() WHERE id = ?");
+        $st->bind_param("si", $new_status, $invoice_id); $st->execute(); $st->close();
+        if ($new_status === 'fully_received' && $prev_status !== 'fully_received') {
+            $qitems = $conn->prepare("SELECT product_id, quantity, cost_price_per_unit FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
+            $qitems->bind_param("i", $invoice_id); $qitems->execute(); $res = $qitems->get_result();
+            while ($row = $res->fetch_assoc()) {
+                $pid = intval($row['product_id']); $qty = floatval($row['quantity']); $cost = floatval($row['cost_price_per_unit']);
+                $upd = $conn->prepare("UPDATE products SET current_stock = current_stock + ?, cost_price = ? WHERE id = ?");
+                $upd->bind_param("dii", $qty, $cost, $pid); $upd->execute(); $upd->close();
+            }
+            $qitems->close();
+        }
+        // if reverting from fully_received to not fully -> optionally revert price (complex) - we keep it simple
+        $conn->commit();
+        $labels = ['pending'=>'قيد الانتظار','partial_received'=>'تم الاستلام جزئياً','fully_received'=>'تم الاستلام بالكامل','cancelled'=>'ملغاة'];
+        json_out(['success'=>true,'message'=>'تم تغيير الحالة','label'=>$labels[$new_status] ?? $new_status]);
+    } catch (Exception $ex) { if ($conn->in_transaction) $conn->rollback(); json_out(['success'=>false,'message'=>'خطأ: '.$ex->getMessage()]); }
+}
+
+// Finalize invoice (AJAX) - used for creating a new purchase invoice (when page used as "create")
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'finalize_invoice_ajax') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success'=>false,'message'=>'CSRF']);
+    $supplier_id = intval($_POST['supplier_id'] ?? 0);
+    $purchase_date = trim($_POST['purchase_date'] ?? date('Y-m-d'));
+    $status = $_POST['status'] ?? 'pending';
+    $notes = trim($_POST['notes'] ?? '');
+    $items_json = $_POST['items'] ?? '[]';
+    $items = json_decode($items_json, true);
+    if ($supplier_id <= 0) json_out(['success'=>false,'message'=>'اختر موردًا قبل الإتمام']);
+    if (!is_array($items) || count($items) === 0) json_out(['success'=>false,'message'=>'الفاتورة لا يمكن أن تكون فارغة']);
+    $valid_items = [];
+    foreach ($items as $it) {
+        $pid = intval($it['product_id'] ?? 0); $qty = floatval($it['qty'] ?? 0); $cost = floatval($it['cost_price'] ?? 0);
+        if ($pid <= 0 || $qty <= 0) continue; $valid_items[] = ['product_id'=>$pid,'quantity'=>$qty,'cost_price'=>$cost,'total'=>$qty*$cost, 'selling_price'=> floatval($it['selling_price'] ?? 0)];
+    }
+    if (empty($valid_items)) json_out(['success'=>false,'message'=>'لا توجد بنود صالحة لإتمام الفاتورة']);
+    try {
+        $conn->begin_transaction();
+        $created_by = $_SESSION['id'] ?? 0;
+        $st = $conn->prepare("INSERT INTO purchase_invoices (supplier_id,supplier_invoice_number,purchase_date,notes,total_amount,status,created_by,created_at) VALUES (?, ?, ?, ?, 0, ?, ?, NOW())");
+        if (!$st) { $conn->rollback(); json_out(['success'=>false,'message'=>'تحضير إدخال الفاتورة فشل']); }
+        $supplier_invoice_number = trim($_POST['supplier_invoice_number'] ?? '');
+        $st->bind_param("issssis", $supplier_id, $supplier_invoice_number, $purchase_date, $notes, $status, $created_by);
+        if (!$st->execute()) { $err = $st->error; $st->close(); $conn->rollback(); json_out(['success'=>false,'message'=>'فشل إدخال الفاتورة: '.$err]); }
+        $new_invoice_id = $st->insert_id; $st->close();
+        $ins = $conn->prepare("INSERT INTO purchase_invoice_items (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+        foreach ($valid_items as $it) {
+            $pid = $it['product_id']; $qty = $it['quantity']; $cost = $it['cost_price']; $total = $it['total'];
+            $ins->bind_param("iiddd", $new_invoice_id, $pid, $qty, $cost, $total);
+            if (!$ins->execute()) { $ins->close(); $conn->rollback(); json_out(['success'=>false,'message'=>'فشل إضافة بند: '.$ins->error]); }
+            // do NOT update stock unless status == fully_received
+            if ($status === 'fully_received') {
+                $upd = $conn->prepare("UPDATE products SET current_stock = current_stock + ?, cost_price = ? WHERE id = ?");
+                $upd->bind_param("dii", $qty, $cost, $pid); $upd->execute(); $upd->close();
+            }
+        }
+        $ins->close();
+        $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
+        $st_sum->bind_param("i", $new_invoice_id); $st_sum->execute(); $g = $st_sum->get_result()->fetch_assoc(); $st_sum->close();
+        $grand_total = floatval($g['grand_total'] ?? 0);
+        $st_up = $conn->prepare("UPDATE purchase_invoices SET total_amount = ? WHERE id = ?"); $st_up->bind_param("di", $grand_total, $new_invoice_id); $st_up->execute(); $st_up->close();
+        $conn->commit();
+        json_out(['success'=>true,'message'=>'تمت إضافة الفاتورة بنجاح','invoice_id'=>$new_invoice_id,'grand_total'=>$grand_total]);
+    } catch (Exception $ex) { if ($conn->in_transaction) $conn->rollback(); json_out(['success'=>false,'message'=>'خطأ في الخادم: '.$ex->getMessage()]); }
+}
+
+// ---------------- Page rendering: load products (initial) and invoice if id ----------------
+$products_list = [];
+$sqlP = "SELECT id, product_code, name, selling_price, cost_price, current_stock, unit_of_measure FROM products ORDER BY name LIMIT 2000";
+if ($resP = $conn->query($sqlP)) { while ($r = $resP->fetch_assoc()) $products_list[] = $r; $resP->free(); }
+
+$next_invoice_id = get_next_purchase_invoice_id($conn);
+
+$invoice = null; $invoice_id = 0; $items = [];
 if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $invoice_id = intval($_GET['id']);
-} else {
-    $_SESSION['message'] = "<div class='alert alert-danger'>رقم فاتورة المشتريات غير محدد أو غير صالح.</div>";
-    header("Location: " . BASE_URL . "admin/manage_suppliers.php");
-    exit;
-}
-
-/* ---------------------------------------------------------
-   معالجة طلبات POST:
-   - تغيير حالة الفاتورة (set_status)
-   - إضافة بند جديد (add_purchase_item)
-   ---------------------------------------------------------*/
-
-// 1) تغيير حالة الفاتورة (مثلاً: إلى fully_received => نحدّث كميات المنتجات إذا لم تُحدَّث مسبقاً)
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['set_status'])) {
-    // تحقّق CSRF و صلاحية
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
-    } elseif (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-        $_SESSION['message'] = "<div class='alert alert-danger'>لا تملك صلاحية تغيير حالة الفاتورة.</div>";
-    } else {
-        $new_status = in_array($_POST['new_status'], array_keys($status_labels)) ? $_POST['new_status'] : null;
-        if (!$new_status) {
-            $_SESSION['message'] = "<div class='alert alert-warning'>حالة غير صحيحة.</div>";
-        } else {
-            // جلب الحالة الحالية
-            $sql_old = "SELECT status FROM purchase_invoices WHERE id = ?";
-            if ($stmt_old = $conn->prepare($sql_old)) {
-                $stmt_old->bind_param("i", $invoice_id);
-                $stmt_old->execute();
-                $res_old = $stmt_old->get_result();
-                $old_row = $res_old->fetch_assoc();
-                $old_status = $old_row['status'] ?? null;
-                $stmt_old->close();
-
-                // إذا التحويل إلى fully_received من حالة ليست fully_received -> يجب تحديث أرصدة المنتجات
-                $need_apply_stock = ($new_status === 'fully_received' && $old_status !== 'fully_received');
-
-                $conn->begin_transaction();
-                try {
-                    $sql_update_invoice = "UPDATE purchase_invoices SET status = ?, updated_at = NOW(), updated_by = ? WHERE id = ?";
-                    $updated_by = intval($_SESSION['id'] ?? 0);
-                    if ($stmt_up = $conn->prepare($sql_update_invoice)) {
-                        $stmt_up->bind_param("sii", $new_status, $updated_by, $invoice_id);
-                        $stmt_up->execute();
-                        $stmt_up->close();
-                    } else {
-                        throw new Exception("خطأ في تحضير استعلام تحديث حالة الفاتورة: " . $conn->error);
-                    }
-
-                    if ($need_apply_stock) {
-                        // جلب كل البنود ثم تحديث المخزون وتحديث cost_price إذا لزم
-                        $sql_items_apply = "SELECT product_id, quantity, cost_price_per_unit FROM purchase_invoice_items WHERE purchase_invoice_id = ?";
-                        $stmt_items_apply = $conn->prepare($sql_items_apply);
-                        $stmt_items_apply->bind_param("i", $invoice_id);
-                        $stmt_items_apply->execute();
-                        $res_items_apply = $stmt_items_apply->get_result();
-                        $stmt_items_apply->close();
-
-                        // تحضير استعلامات تحديث
-                        $sql_update_stock = "UPDATE products SET current_stock = current_stock + ? WHERE id = ?";
-                        $stmt_update_stock = $conn->prepare($sql_update_stock);
-                        $sql_update_cost = "UPDATE products SET cost_price = ? WHERE id = ?";
-                        $stmt_update_cost = $conn->prepare($sql_update_cost);
-
-                        while ($rw = $res_items_apply->fetch_assoc()) {
-                            $pid = intval($rw['product_id']);
-                            $qty = floatval($rw['quantity']);
-                            $cprice = floatval($rw['cost_price_per_unit']);
-
-                            // تحديث الكمية
-                            $stmt_update_stock->bind_param("di", $qty, $pid);
-                            $stmt_update_stock->execute();
-
-                            // تحديث آخر تكلفة كـ cost_price
-                            $stmt_update_cost->bind_param("di", $cprice, $pid);
-                            $stmt_update_cost->execute();
-                        }
-                        $stmt_update_stock->close();
-                        $stmt_update_cost->close();
-                    }
-
-                    $conn->commit();
-                    $_SESSION['message'] = "<div class='alert alert-success'>تم تغيير حالة الفاتورة إلى: {$status_labels[$new_status]}</div>";
-                } catch (Exception $e) {
-                    $conn->rollback();
-                    $_SESSION['message'] = "<div class='alert alert-danger'>فشل تغيير الحالة: " . htmlspecialchars($e->getMessage()) . "</div>";
-                }
-            } else {
-                $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في جلب حالة الفاتورة: " . $conn->error . "</div>";
-            }
-        }
-    }
-    header("Location: " . BASE_URL . "admin/view_purchase_invoice.php?id=" . $invoice_id);
-    exit;
-}
-
-// 2) إضافة بند جديد (مُحدّث): يسمح أيضاً بتحديث selling_price في products إذا طلب المستخدم ذلك
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['add_purchase_item'])) {
-    // أولًا تحقق الحالة الحالية للفاتورة
-    $sql_check_invoice_status_for_add = "SELECT status FROM purchase_invoices WHERE id = ?";
-    $stmt_check_status_add = $conn->prepare($sql_check_invoice_status_for_add);
-    $stmt_check_status_add->bind_param("i", $invoice_id);
-    $stmt_check_status_add->execute();
-    $res_status_add = $stmt_check_status_add->get_result();
-    $invoice_status_data_add = $res_status_add->fetch_assoc();
-    $stmt_check_status_add->close();
-
-    if (!$invoice_status_data_add || $invoice_status_data_add['status'] === 'cancelled') {
-        $_SESSION['message'] = "<div class='alert alert-warning'>لا يمكن إضافة بنود لهذه الفاتورة لأنها ملغاة أو غير موجودة.</div>";
-    } elseif (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
-    } else {
-        $product_id_to_add = intval($_POST['product_id']);
-        $quantity_received = floatval($_POST['quantity']);
-        $cost_price_to_add = floatval($_POST['cost_price_per_unit']);
-        $selling_price_provided = isset($_POST['selling_price']) ? floatval($_POST['selling_price']) : null;
-        $update_selling_price = isset($_POST['update_selling_price']) && $_POST['update_selling_price'] === '1' ? true : false;
-
-        // validations
-        if ($product_id_to_add <= 0) {
-            $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء اختيار منتج صحيح.</div>";
-        } elseif ($quantity_received <= 0) {
-            $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء إدخال كمية صحيحة أكبر من صفر.</div>";
-        } elseif ($cost_price_to_add < 0) {
-            $_SESSION['message'] = "<div class='alert alert-danger'>الرجاء إدخال سعر تكلفة صحيح.</div>";
-        } else {
-            $conn->begin_transaction();
-            try {
-                $total_cost_for_item = $quantity_received * $cost_price_to_add;
-                $sql_insert_item = "INSERT INTO purchase_invoice_items
-                                    (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost)
-                                    VALUES (?, ?, ?, ?, ?)";
-                $stmt_insert_item = $conn->prepare($sql_insert_item);
-                if (!$stmt_insert_item) throw new Exception("خطأ تحضير إدخال البند: " . $conn->error);
-                $stmt_insert_item->bind_param("iiddd", $invoice_id, $product_id_to_add, $quantity_received, $cost_price_to_add, $total_cost_for_item);
-                $stmt_insert_item->execute();
-                $stmt_insert_item->close();
-
-                // تحديث المخزون و cost_price إذا كانت الفاتورة بالفعل fully_received
-                if ($invoice_status_data_add['status'] === 'fully_received') {
-                    $sql_update_stock = "UPDATE products SET current_stock = current_stock + ?, cost_price = ? WHERE id = ?";
-                    $stmt_update_stock = $conn->prepare($sql_update_stock);
-                    $stmt_update_stock->bind_param("dii", $quantity_received, $cost_price_to_add, $product_id_to_add);
-                    $stmt_update_stock->execute();
-                    $stmt_update_stock->close();
-                }
-
-                // تحديث سعر البيع في products إذا اختار المستخدم ذلك
-                if ($update_selling_price && $selling_price_provided !== null && $selling_price_provided >= 0) {
-                    $sql_update_selling = "UPDATE products SET selling_price = ? WHERE id = ?";
-                    $stmt_up_selling = $conn->prepare($sql_update_selling);
-                    $stmt_up_selling->bind_param("di", $selling_price_provided, $product_id_to_add);
-                    $stmt_up_selling->execute();
-                    $stmt_up_selling->close();
-                }
-
-                // إعادة حساب إجمالي الفاتورة
-                $sql_sum_total = "SELECT SUM(total_cost) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?";
-                $stmt_sum = $conn->prepare($sql_sum_total);
-                $stmt_sum->bind_param("i", $invoice_id);
-                $stmt_sum->execute();
-                $result_sum = $stmt_sum->get_result();
-                $row_sum = $result_sum->fetch_assoc();
-                $invoice_total_calculated = floatval($row_sum['grand_total'] ?? 0);
-                $stmt_sum->close();
-
-                $sql_update_invoice_total = "UPDATE purchase_invoices SET total_amount = ? WHERE id = ?";
-                $stmt_update_invoice_total = $conn->prepare($sql_update_invoice_total);
-                $stmt_update_invoice_total->bind_param("di", $invoice_total_calculated, $invoice_id);
-                $stmt_update_invoice_total->execute();
-                $stmt_update_invoice_total->close();
-
-                $conn->commit();
-                $_SESSION['message'] = "<div class='alert alert-success'>تم إضافة البند بنجاح.</div>";
-            } catch (Exception $ex) {
-                $conn->rollback();
-                $_SESSION['message'] = "<div class='alert alert-danger'>فشلت العملية: " . htmlspecialchars($ex->getMessage()) . "</div>";
-            }
-        }
-    }
-    header("Location: " . BASE_URL . "admin/view_purchase_invoice.php?id=" . $invoice_id);
-    exit;
-}
-
-/* ---------------------------------------------------------
-   جلب بيانات الفاتورة و البنود و قائمة المنتجات (للبحث client-side)
-   ---------------------------------------------------------*/
-
-// جلب رأس الفاتورة
-$sql_invoice_header = "SELECT pi.*, s.name as supplier_name, u.username as creator_name
-                       FROM purchase_invoices pi
-                       JOIN suppliers s ON pi.supplier_id = s.id
-                       LEFT JOIN users u ON pi.created_by = u.id
-                       WHERE pi.id = ?";
-$stmt_header = $conn->prepare($sql_invoice_header);
-$stmt_header->bind_param("i", $invoice_id);
-$stmt_header->execute();
-$result_header = $stmt_header->get_result();
-if ($result_header->num_rows === 1) {
-    $purchase_invoice_data = $result_header->fetch_assoc();
-} else {
-    if (empty($message)) $message = "<div class='alert alert-danger'>لم يتم العثور على فاتورة المشتريات (رقم: {$invoice_id}).</div>";
-}
-$stmt_header->close();
-
-// جلب البنود
-if ($purchase_invoice_data) {
-    $sql_items = "SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost,
-                         p.product_code, p.name as product_name, p.unit_of_measure
-                  FROM purchase_invoice_items p_item
-                  JOIN products p ON p_item.product_id = p.id
-                  WHERE p_item.purchase_invoice_id = ?
-                  ORDER BY p_item.id ASC";
-    $stmt_items = $conn->prepare($sql_items);
-    $stmt_items->bind_param("i", $invoice_id);
-    $stmt_items->execute();
-    $result_items = $stmt_items->get_result();
-    while ($row_item = $result_items->fetch_assoc()) {
-        $purchase_invoice_items[] = $row_item;
-        $invoice_total_calculated += floatval($row_item['total_cost']);
-    }
-    $stmt_items->close();
-
-    // جلب قائمة المنتجات كاملة (سنستخدمها في JS كـ JSON للبحث السريع)
-    $sql_products = "SELECT id, product_code, name, unit_of_measure, current_stock, cost_price, selling_price FROM products ORDER BY name ASC";
-    $result_products_query = $conn->query($sql_products);
-    if ($result_products_query) {
-        while ($row_prod = $result_products_query->fetch_assoc()) {
-            $products_list[] = $row_prod;
-        }
-    } else {
-        $message .= "<div class='alert alert-warning'>خطأ في جلب قائمة المنتجات: " . htmlspecialchars($conn->error) . "</div>";
+    $st = $conn->prepare("SELECT pi.*, s.name as supplier_name, u.username as creator_name FROM purchase_invoices pi LEFT JOIN suppliers s ON pi.supplier_id = s.id LEFT JOIN users u ON pi.created_by = u.id WHERE pi.id = ? LIMIT 1");
+    $st->bind_param("i", $invoice_id); $st->execute(); $invoice = $st->get_result()->fetch_assoc(); $st->close();
+    if ($invoice) {
+        $s2 = $conn->prepare("SELECT id, product_id, quantity, cost_price_per_unit, total_cost FROM purchase_invoice_items WHERE purchase_invoice_id = ? ORDER BY id ASC");
+        $s2->bind_param("i", $invoice_id); $s2->execute(); $res2 = $s2->get_result(); while ($r = $res2->fetch_assoc()) $items[] = $r; $s2->close();
     }
 }
 
-// روابط
-$edit_purchase_invoice_header_link = BASE_URL . "admin/edit_purchase_invoice.php?id=" . $invoice_id;
-$manage_suppliers_link = BASE_URL . "admin/manage_suppliers.php";
-$delete_purchase_item_link = BASE_URL . "admin/delete_purchase_item.php";
-
+// include header & sidebar
+require_once BASE_DIR . 'partials/header.php';
+require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
-<div class="container mt-5 pt-3">
-    <?php echo $message; ?>
+<style>
 
-    <?php if ($purchase_invoice_data): ?>
-        <div class="card shadow-lg mb-4">
-            <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-center" style="background:var(--grad-1); color:white;">
-                <h3 class="mb-2 mb-md-0"><i class="fas fa-receipt"></i> تفاصيل فاتورة المشتريات رقم: #<?php echo $purchase_invoice_data['id']; ?></h3>
-                <div class="d-flex gap-2">
-                    <!-- زر تعديل رأس الفاتورة -->
-                    <a href="<?php echo $edit_purchase_invoice_header_link; ?>" class="btn btn-warning btn-sm"><i class="fas fa-edit"></i> تعديل</a>
+.soft{ background:var(--surface); border-radius:12px; padding:14px; box-shadow:0 10px 24px rgba(15,23,42,0.06); border:1px solid var(--border); }
+.product-item{ display:flex; justify-content:space-between; gap:10px; padding:10px; border-radius:10px; margin-bottom:8px; cursor:pointer; border:1px solid transparent; transition:all .12s; }
+.product-item:hover{ transform:translateY(-3px); border-color: rgba(11,132,255,0.06); }
+.badge-out{ background:#c00; color:#fff; padding:3px 8px; border-radius:8px; font-size:12px; }
+.items-wrapper{ max-height:460px; overflow:auto; border-radius:8px; border:1px solid var(--border); }
+.items-wrapper table thead th{ position:sticky; top:0; background:var(--surface); z-index:5; }
+.status-group{ display:flex; gap:8px; }
+.status-btn{ padding:8px 12px; border-radius:10px; cursor:pointer; border:1px solid transparent; background:#f3f4f6; }
+.status-btn.active{ background:linear-gradient(135deg,#0b84ff,#7c3aed); color:#fff; box-shadow:0 8px 20px rgba(11,132,255,0.08); }
+.no-items{ color:#6b7280; padding:20px; text-align:center; }
+.small-muted{ color:#6b7280; }
+.modal-backdrop{ position:fixed; left:0; top:0; right:0; bottom:0; display:none; align-items:center; justify-content:center; background:rgba(2,6,23,0.4); z-index:9999; }
+/* .mymodal{ background:#fff; padding:16px; border-radius:10px; max-width:900px; width:95%; } */
+/* .no-print{ } */
+@media print { .no-print{ display:none !important; } }
+</style>
 
-                    <!-- أزرار الحالة الصغيرة (pending / fully_received / cancelled) -->
-                    <form method="post" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                        <input type="hidden" name="new_status" value="pending">
-                        <button type="submit" name="set_status" class="btn btn-outline-light btn-sm" title="قيد الانتظار" onclick="return confirm('هل تود وضع الفاتورة كقيد انتظار؟');">
-                            <i class="fas fa-hourglass-start"></i>
-                        </button>
-                    </form>
-                    <form method="post" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                        <input type="hidden" name="new_status" value="fully_received">
-                        <button type="submit" name="set_status" class="btn btn-light btn-sm" title="تم الاستلام بالكامل" onclick="return confirm('عند تحويل الفاتورة إلى (تم الاستلام بالكامل) سيتم إضافة الأرصدة للمخزون إذا لم تُطبّق من قبل. استمر؟');">
-                            <i class="fas fa-check-double"></i>
-                        </button>
-                    </form>
-                    <form method="post" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                        <input type="hidden" name="new_status" value="cancelled">
-                        <button type="submit" name="set_status" class="btn btn-outline-danger btn-sm" title="ملغاة" onclick="return confirm('هل تريد إلغاء هذه الفاتورة؟');">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </form>
+<div class="container mt-4 mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="mb-0">تفاصيل فاتورة مشتريات <?php if ($invoice) echo '#'.intval($invoice['id']); ?></h3>
+      <?php if ($invoice): ?>
+        <div class="small-muted">رقم فاتورة المورد: <?php echo e($invoice['supplier_invoice_number'] ?: '-'); ?> — تاريخ الشراء: <?php echo e(date('Y-m-d', strtotime($invoice['purchase_date'] ?? date('Y-m-d')))); ?></div>
+        <div class="small-muted">الحالة: <strong id="currentStatusLabel"><?php echo e($invoice['status'] ?? 'pending'); ?></strong></div>
+      <?php else: ?>
+        <div class="small-muted">إنشاء فاتورة جديدة — افتراضياً: قيد الانتظار</div>
+      <?php endif; ?>
+    </div>
+    <div class="btn-group no-print">
+      <a href="<?php echo BASE_URL; ?>admin/manage_purchase_invoices.php" class="btn btn-outline-secondary">رجوع</a>
+      <button class="btn btn-secondary" onclick="window.print();">طباعة</button>
+    </div>
+  </div>
 
-                    <a href="#" onclick="window.print(); return false;" class="btn btn-secondary btn-sm"><i class="fas fa-print"></i> طباعة</a>
-                </div>
+  <div class="row g-3">
+    <!-- left: products -->
+    <div class="col-lg-4">
+      <div class="soft">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong>المنتجات</strong>
+          <input id="product_search" placeholder="بحث باسم أو كود..." style="padding:6px;border-radius:6px;border:1px solid var(--border); width:58%">
+        </div>
+        <div id="product_list" style="max-height:520px; overflow:auto;">
+          <?php foreach($products_list as $p): $o = floatval($p['current_stock']) <= 0 ? ' out-of-stock' : ''; ?>
+            <div class="product-item<?php echo $o; ?>" data-id="<?php echo (int)$p['id']; ?>" data-name="<?php echo e($p['name']); ?>" data-code="<?php echo e($p['product_code']); ?>" data-cost="<?php echo floatval($p['cost_price']); ?>" data-selling="<?php echo floatval($p['selling_price']); ?>" data-stock="<?php echo floatval($p['current_stock']); ?>">
+              <div>
+                <div style="font-weight:700"><?php echo e($p['name']); ?></div>
+                <div class="small-muted">كود: <?php echo e($p['product_code']); ?> — رصيد: <span class="stock-number"><?php echo e($p['current_stock']); ?></span></div>
+              </div>
+              <div style="text-align:left">
+                <div style="font-weight:700"><?php echo number_format($p['cost_price'],2); ?> ج.م</div>
+                <?php if(floatval($p['current_stock']) <= 0): ?><div class="badge-out">نفذ</div><?php endif; ?>
+              </div>
             </div>
-
-            <div class="card-body p-4">
-                <div class="row">
-                    <div class="col-lg-6 mb-3">
-                        <h5>بيانات الفاتورة:</h5>
-                        <ul class="list-unstyled">
-                            <li><strong>رقم فاتورة المورد:</strong> <?php echo htmlspecialchars($purchase_invoice_data['supplier_invoice_number'] ?: '-'); ?></li>
-                            <li><strong>تاريخ الشراء:</strong> <?php echo date('Y-m-d', strtotime($purchase_invoice_data['purchase_date'])); ?></li>
-                            <li><strong>الحالة:</strong>
-                                <span class="badge <?php
-                                    switch($purchase_invoice_data['status']){
-                                        case 'pending': echo 'bg-warning text-dark'; break;
-                                        case 'fully_received': echo 'bg-success'; break;
-                                        case 'cancelled': echo 'bg-danger'; break;
-                                        default: echo 'bg-secondary';
-                                    }
-                                ?>"><?php echo $status_labels[$purchase_invoice_data['status']]; ?></span>
-                            </li>
-                            <li><strong>ملاحظات:</strong> <?php echo nl2br(htmlspecialchars($purchase_invoice_data['notes'] ?: '-')); ?></li>
-                        </ul>
-                    </div>
-                    <div class="col-lg-6 mb-3">
-                        <h5>بيانات المورد:</h5>
-                        <ul class="list-unstyled">
-                            <li><strong>الاسم:</strong> <?php echo htmlspecialchars($purchase_invoice_data['supplier_name']); ?></li>
-                            <li><strong>أنشئت بواسطة:</strong> <?php echo htmlspecialchars($purchase_invoice_data['creator_name'] ?? 'غير معروف'); ?></li>
-                            <li><strong>تاريخ الإنشاء:</strong> <?php echo date('Y-m-d H:i A', strtotime($purchase_invoice_data['created_at'])); ?></li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+          <?php endforeach; ?>
         </div>
 
-        <!-- جدول البنود -->
-        <div class="card shadow-lg mb-4">
-            <div class="card-header bg-light"><h4><i class="fas fa-boxes"></i> بنود فاتورة المشتريات</h4></div>
-            <div class="card-body p-0">
-                <?php if (!empty($purchase_invoice_items)): ?>
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover mb-0">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th>#</th>
-                                    <th>كود المنتج</th>
-                                    <th>اسم المنتج</th>
-                                    <th class="text-center">الكمية المستلمة</th>
-                                    <th class="text-end">سعر التكلفة للوحدة</th>
-                                    <th class="text-end">إجمالي التكلفة</th>
-                                    <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
-                                    <th class="text-center">إجراء</th>
-                                    <?php endif; ?>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php $item_counter = 1; ?>
-                                <?php foreach ($purchase_invoice_items as $item): ?>
-                                    <tr>
-                                        <td><?php echo $item_counter++; ?></td>
-                                        <td><?php echo htmlspecialchars($item['product_code']); ?></td>
-                                        <td><?php echo htmlspecialchars($item['product_name']); ?> (<?php echo htmlspecialchars($item['unit_of_measure']); ?>)</td>
-                                        <td class="text-center"><?php echo number_format(floatval($item['quantity']), 2); ?></td>
-                                        <td class="text-end"><?php echo number_format(floatval($item['cost_price_per_unit']), 2); ?> ج.م</td>
-                                        <td class="text-end fw-bold"><?php echo number_format(floatval($item['total_cost']), 2); ?> ج.م</td>
-                                        <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
-                                        <td class="text-center">
-                                            <form action="<?php echo $delete_purchase_item_link; ?>" method="post" class="d-inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا البند؟');">
-                                                <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                <input type="hidden" name="item_id_to_delete" value="<?php echo $item['item_id_pk']; ?>">
-                                                <input type="hidden" name="purchase_invoice_id" value="<?php echo $invoice_id; ?>">
-                                                <input type="hidden" name="product_id_to_adjust" value="<?php echo $item['product_id']; ?>">
-                                                <input type="hidden" name="quantity_to_adjust" value="<?php echo floatval($item['quantity']); ?>">
-                                                <button type="submit" name="delete_purchase_item" class="btn btn-danger btn-sm" title="حذف البند">
-                                                    <i class="fas fa-trash-alt"></i>
-                                                </button>
-                                            </form>
-                                        </td>
-                                        <?php endif; ?>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                            <tfoot>
-                                <tr class="table-light">
-                                    <td colspan="6" class="text-end fw-bold fs-5">الإجمالي الكلي للفاتورة:</td>
-                                    <td class="text-end fw-bold fs-5"><?php echo number_format(floatval($invoice_total_calculated), 2); ?> ج.م</td>
-                                    <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
-                                    <td></td>
-                                    <?php endif; ?>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                <?php else: ?>
-                    <p class="text-center p-3">لا توجد بنود في فاتورة المشتريات هذه حتى الآن.</p>
-                <?php endif; ?>
+        <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
+          <div style="flex:1">
+            <label class="small-muted">كمية افتراضية</label>
+            <input id="default_qty" type="number" class="form-control form-control-sm" value="1.00" step="0.01" min="0.01">
+          </div>
+          <div style="width:120px;text-align:right">
+            <button id="open_cart" class="btn btn-primary" style="margin-top:22px;">العناصر (<span id="cart_count">0</span>)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- right: invoice header & items -->
+    <div class="col-lg-8">
+      <div class="soft mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <h5 class="mb-1">بيانات الفاتورة</h5>
+            <?php if ($invoice): ?>
+              <div class="small-muted">بيانات المورد: <?php echo e($invoice['supplier_name'] ?? '-'); ?> — أنشئت بواسطة: <?php echo e($invoice['creator_name'] ?? '-'); ?> — تاريخ الإنشاء: <?php echo e($invoice['created_at'] ?? '-'); ?></div>
+            <?php else: ?>
+              <div class="small-muted">اختَر المنتجات ثم اضغط إتمام الفاتورة</div>
+            <?php endif; ?>
+          </div>
+          <div>
+            <div class="status-group" role="tablist" aria-label="حالة الفاتورة">
+              <?php
+                $statuses = ['pending'=> 'قيد الانتظار', 'partial_received'=>'تم الاستلام جزئياً','fully_received'=>'تم الاستلام بالكامل','cancelled'=>'ملغاة'];
+                $cur = $invoice['status'] ?? 'pending';
+                foreach ($statuses as $k=>$label) {
+                    $active = ($k === $cur) ? ' active' : '';
+                    echo "<div class=\"status-btn$active\" data-status=\"$k\">$label</div>";
+                }
+              ?>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="soft mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <strong>بنود الفاتورة</strong>
+          <div class="small-muted">سعر الشراء يُستخدم لحساب إجمالي الفاتورة (افتراضي: آخر سعر تكلفة)</div>
         </div>
 
-        <!-- إضافة بند جديد (واجهة محسّنة - بحث مشابه ل Invoice Out) -->
-        <?php if ($purchase_invoice_data['status'] != 'cancelled'): ?>
-        <div class="card shadow-lg mt-4">
-            <div class="card-header" style="background:var(--grad-2); color:white;">
-                <h4 class="mb-0"><i class="fas fa-cart-plus"></i> إضافة بند جديد لفاتورة المشتريات</h4>
-            </div>
-            <div class="card-body p-4">
-                <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>?id=<?php echo $invoice_id; ?>" method="post" id="addItemForm">
-                    <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                    <div class="row gy-2">
-                        <div class="col-md-6">
-                            <label for="product_search_input" class="form-label">ابحث عن المنتج (باسم أو كود)</label>
-                            <input type="text" id="product_search_input" class="form-control" placeholder="ابدأ بالكتابة لاختيار منتج..." autocomplete="off">
-                            <div id="product_suggestions" class="list-group position-relative" style="z-index:2000;"></div>
-                            <input type="hidden" name="product_id" id="product_id">
-                        </div>
-
-                        <div class="col-md-2">
-                            <label for="current_stock_display" class="form-label">الرصيد الآن</label>
-                            <input type="text" id="current_stock_display" class="form-control" readonly>
-                        </div>
-
-                        <div class="col-md-2">
-                            <label for="quantity" class="form-label">الكمية المستلمة</label>
-                            <input type="number" name="quantity" id="quantity" class="form-control" step="0.01" min="0.01" value="1.00" required>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label for="cost_price_per_unit" class="form-label">سعر التكلفة للوحدة</label>
-                            <input type="number" name="cost_price_per_unit" id="cost_price_per_unit" class="form-control" step="0.01" min="0" value="0.00" required>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label for="selling_price" class="form-label">سعر البيع الحالي / جديد (اختياري)</label>
-                            <input type="number" name="selling_price" id="selling_price" class="form-control" step="0.01" min="0" placeholder="سعر البيع">
-                        </div>
-
-                        <div class="col-md-3 d-flex align-items-center">
-                            <div class="form-check mt-3">
-                                <input class="form-check-input" type="checkbox" value="1" id="update_selling_price" name="update_selling_price">
-                                <label class="form-check-label" for="update_selling_price">تحديث سعر البيع في المنتج</label>
-                            </div>
-                        </div>
-
-                        <div class="col-md-3 d-flex align-items-end">
-                            <button type="submit" name="add_purchase_item" class="btn btn-success w-100"><i class="fas fa-plus me-2"></i> إضافة</button>
-                        </div>
-                    </div>
-
-                    <div class="mt-2 small text-muted">يمكنك اختيار منتج عبر الحقول أعلاه، أو إدخال الكود/الاسم والاختيار من الاقتراحات. إذا حددت (تحديث سعر البيع) فسيتم تعديل سعر البيع في سجل المنتج.</div>
-                </form>
-            </div>
-        </div>
-        <?php endif; ?>
-
-        <div class="card-footer text-muted text-center mt-4">
-            <a href="<?php echo $manage_suppliers_link; ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> العودة لإدارة الموردين</a>
+        <div class="items-wrapper">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:40px">#</th>
+                <th>المنتج</th>
+                <th class="text-center" style="width:120px">الكمية</th>
+                <th class="text-end" style="width:140px">سعر الشراء</th>
+                <th class="text-end" style="width:140px">سعر البيع</th>
+                <th class="text-end" style="width:140px">إجمالي (سعر الشراء)</th>
+                <th class="text-center no-print" style="width:90px">إجراء</th>
+              </tr>
+            </thead>
+            <tbody id="items_tbody">
+              <?php if (!empty($items)): $i=1; foreach($items as $it): ?>
+                <?php $pname = '#'.$it['product_id']; foreach ($products_list as $pp) if ($pp['id']==$it['product_id']) { $pname = $pp['name']; $last_sell = $pp['selling_price']; break; } ?>
+                <tr data-item-id="<?php echo $it['id']; ?>" data-product-id="<?php echo $it['product_id']; ?>">
+                  <td><?php echo $i++; ?></td>
+                  <td><?php echo e($pname); ?></td>
+                  <td class="text-center"><input class="form-control form-control-sm item-qty text-center" value="<?php echo number_format($it['quantity'],2); ?>" step="0.01" min="0" style="width:100px; margin:auto"></td>
+                  <td class="text-end"><input class="form-control form-control-sm item-cost text-end" value="<?php echo number_format($it['cost_price_per_unit'],2); ?>" step="0.01" min="0" style="width:110px; display:inline-block"> ج.م</td>
+                  <td class="text-end"><input class="form-control form-control-sm item-selling text-end" value="<?php echo number_format($last_sell ?? 0,2); ?>" step="0.01" min="0" style="width:110px; display:inline-block"> ج.م</td>
+                  <td class="text-end fw-bold item-total"><?php echo number_format($it['total_cost'],2); ?> ج.م</td>
+                  <td class="text-center no-print"><button class="btn btn-sm btn-danger btn-delete-item" data-item-id="<?php echo $it['id']; ?>">حذف</button></td>
+                </tr>
+              <?php endforeach; else: ?>
+                <tr id="no-items-row"><td colspan="7" class="no-items">لا توجد بنود بعد — اختر منتجاً لإضافته.</td></tr>
+              <?php endif; ?>
+            </tbody>
+            <tfoot>
+              <tr class="table-light">
+                <td colspan="5" class="text-end fw-bold">الإجمالي الكلي (سعر الشراء):</td>
+                <td class="text-end fw-bold" id="grand_total">0.00 ج.م</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
 
-    <?php else: ?>
-        <div class="alert alert-warning text-center">لم يتم العثور على فاتورة المشتريات المطلوبة.
-            <a href="<?php echo $manage_suppliers_link; ?>">العودة لإدارة الموردين</a>.
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <div>
+            <button id="finalizeBtn" class="btn btn-success no-print">إتمام الفاتورة</button>
+            <button id="clearDraft" class="btn btn-outline-secondary no-print">تفريغ</button>
+          </div>
+          <div class="small-muted">ملاحظة: الفاتورة تبقى مؤجلة افتراضياً ولا يتم تحديث المخزون إلا عند تغيير الحالة إلى "تم الاستلام بالكامل".</div>
         </div>
-    <?php endif; ?>
+
+      </div>
+
+      <div class="soft">
+        <div><strong>ملاحظة الفاتورة (عرض فقط للطباعة مخفي):</strong></div>
+        <div class="small-muted invoice-notes"><?php echo nl2br(e($invoice['notes'] ?? '-')); ?></div>
+      </div>
+
+    </div>
+
+  </div>
 </div>
 
-<!-- ========================= JS للبحث السريع والاقتراحات ========================= -->
+<!-- Confirm Modal -->
+<div id="modalConfirm" class="modal-backdrop">
+  <div class="mymodal">
+    <h4>تأكيد إتمام الفاتورة</h4>
+    <div id="confirmPreview"></div>
+    <div class="d-flex justify-content-between align-items-center mt-3">
+      <div>
+        <button id="confirmCancel" class="btn btn-outline-secondary">إلغاء</button>
+        <button id="confirmSend" class="btn btn-success">تأكيد وإرسال</button>
+      </div>
+      <div><strong>الإجمالي:</strong> <span id="confirm_total">0.00</span> ج.م</div>
+    </div>
+  </div>
+</div>
+
 <script>
-    // products_list_json: بيانات المنتجات قادمة من السيرفر
-    const products = <?php echo json_encode($products_list, JSON_UNESCAPED_UNICODE); ?> || [];
+document.addEventListener('DOMContentLoaded', function(){
+  // basic helpers
+  function q(sel, ctx=document){ return ctx.querySelector(sel); }
+  function qa(sel, ctx=document){ return Array.from(ctx.querySelectorAll(sel)); }
+  function escapeHtml(s){ return String(s||'').replace(/[&<>'"]/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
-    const input = document.getElementById('product_search_input');
-    const suggestions = document.getElementById('product_suggestions');
-    const productIdField = document.getElementById('product_id');
-    const currentStockDisplay = document.getElementById('current_stock_display');
-    const costPriceField = document.getElementById('cost_price_per_unit');
-    const sellingPriceField = document.getElementById('selling_price');
+  const csrf = <?php echo json_encode($csrf_token); ?>;
+  const invoiceId = <?php echo intval($invoice_id ?: 0); ?>;
+  const productsLocal = Array.from(qa('.product-item')).map(el=>({
+    id: parseInt(el.dataset.id||0,10), name: el.dataset.name, code: el.dataset.code,
+    cost: parseFloat(el.dataset.cost||0), selling: parseFloat(el.dataset.selling||0), stock: parseFloat(el.dataset.stock||0), el: el
+  }));
 
-    function clearSuggestions() {
-        suggestions.innerHTML = '';
-    }
-
-    function renderSuggestion(prod) {
-        const a = document.createElement('a');
-        a.href = '#';
-        a.className = 'list-group-item list-group-item-action';
-        a.innerHTML = `<div><strong>${escapeHtml(prod.name)}</strong> &nbsp;<small class="text-muted">(${escapeHtml(prod.product_code)})</small></div>
-                       <div class="small text-muted">الرصيد: ${prod.current_stock} — تكلفة: ${prod.cost_price} — بيع: ${prod.selling_price}</div>`;
-        a.addEventListener('click', function(e){
-            e.preventDefault();
-            selectProduct(prod);
-            clearSuggestions();
-        });
-        return a;
-    }
-
-    function selectProduct(prod) {
-        input.value = prod.name + ' (' + prod.product_code + ')';
-        productIdField.value = prod.id;
-        currentStockDisplay.value = prod.current_stock;
-        // ملء الحقول بقيم المنتج الحالية (يمكن التعديل)
-        costPriceField.value = prod.cost_price !== null ? prod.cost_price : '0.00';
-        sellingPriceField.value = prod.selling_price !== null ? prod.selling_price : '';
-    }
-
-    function escapeHtml(text) {
-        if (!text) return '';
-        return text.replace(/[&<>"'`=\/]/g, function (s) {
-            return ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;'
-            })[s];
-        });
-    }
-
-    input.addEventListener('input', function(){
-        const q = this.value.trim().toLowerCase();
-        clearSuggestions();
-        if (q.length === 0) return;
-        let matched = [];
-        // ابحث في الاسم و الكود
-        for (let p of products) {
-            if ((p.name && p.name.toLowerCase().includes(q)) || (p.product_code && p.product_code.toLowerCase().includes(q))) {
-                matched.push(p);
-                if (matched.length >= 8) break;
-            }
-        }
-        if (matched.length === 0) {
-            const no = document.createElement('div');
-            no.className = 'list-group-item';
-            no.textContent = 'لا توجد نتائج';
-            suggestions.appendChild(no);
-        } else {
-            for (let m of matched) {
-                suggestions.appendChild(renderSuggestion(m));
-            }
-        }
+  // Search products (works by name or code)
+  q('#product_search').addEventListener('input', function(e){
+    const qv = (e.target.value||'').trim().toLowerCase();
+    productsLocal.forEach(p=>{
+      const show = !qv || (p.name && p.name.toLowerCase().includes(qv)) || (p.code && p.code.toLowerCase().includes(qv));
+      p.el.style.display = show ? '' : 'none';
     });
+  });
 
-    // عند الخروج من الحقل نُخفي الاقتراحات بعد فترة قصيرة لتفادي منع الضغط على رابط الاقتراح
-    input.addEventListener('blur', function(){
-        setTimeout(clearSuggestions, 150);
+  // Cart for create-mode
+  const cart = [];
+  function renderCartCount(){ q('#cart_count').textContent = cart.length; }
+  function renderGrand(){
+    let g = 0;
+    qa('#items_tbody tr').forEach(tr=>{
+      if (tr.id === 'no-items-row') return;
+      const text = tr.querySelector('.item-total')?.innerText || '0';
+      const num = parseFloat(String(text).replace(/[^\d.-]/g,'')) || 0;
+      g += num;
     });
+    q('#grand_total').innerText = g.toFixed(2) + ' ج.م';
+    return g;
+  }
 
-    // لو دخل المستخدم رقم فاتورة أو كود مباشرة دون اختيار - نتركه، وإرسال النموذج سيتحقق من product_id
-    document.getElementById('addItemForm').addEventListener('submit', function(e){
-        if (!productIdField.value || productIdField.value === '') {
-            // حاول البحث عن المنتج من الحقل النصي يدوياً (مطابقة دقيقة على الكود)
-            const q = input.value.trim().toLowerCase();
-            if (q.length > 0) {
-                // محاولة إستخراج كود من داخل القوسين أو من النص
-                let found = null;
-                for (let p of products) {
-                    if (p.product_code && p.product_code.toString().toLowerCase() === q) {
-                        found = p;
-                        break;
-                    }
-                    if (p.name && p.name.toLowerCase() === q) {
-                        found = p;
-                        break;
-                    }
-                }
-                if (found) {
-                    selectProduct(found);
-                }
-            }
-        }
-        // بعد كل هذا إذا لم يتم تحديد product_id, نمنع الإرسال
-        if (!productIdField.value || productIdField.value === '') {
-            e.preventDefault();
-            alert('الرجاء اختيار منتج من الاقتراحات أو كتابة الكود/الاسم بشكل مطابق.');
-            input.focus();
-            return false;
-        }
+  // Add product click -> either add to existing invoice via AJAX, or to client cart for new invoice
+  q('#product_list').addEventListener('click', function(e){
+    const it = e.target.closest('.product-item'); if (!it) return; const pid = parseInt(it.dataset.id,10);
+    const p = productsLocal.find(x=> x.id === pid); if (!p) return;
+    const qty = parseFloat(q('#default_qty').value) || 1;
+    if (invoiceId) {
+      // existing invoice -> call add_item_ajax
+      const form = new URLSearchParams(); form.append('action','add_item_ajax'); form.append('csrf_token', csrf); form.append('invoice_id', invoiceId); form.append('product_id', pid); form.append('quantity', qty); form.append('cost_price', p.cost); form.append('selling_price', p.selling);
+      fetch(location.pathname, { method:'POST', body: form }).then(r=>r.json()).then(d=>{
+        if (!d.success) return alert(d.message || 'فشل');
+        // append row
+        const itRow = d.item;
+        const tr = document.createElement('tr'); tr.dataset.itemId = itRow.item_id_pk; tr.dataset.productId = itRow.product_id;
+        const idx = qa('#items_tbody tr').length;
+        tr.innerHTML = `<td>${idx}</td><td>${escapeHtml(itRow.product_name)}</td><td class="text-center"><input class="form-control form-control-sm item-qty text-center" value="${parseFloat(itRow.quantity).toFixed(2)}" step="0.01" min="0" style="width:100px;margin:auto"></td><td class="text-end"><input class="form-control form-control-sm item-cost text-end" value="${parseFloat(itRow.cost_price_per_unit).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.م</td><td class="text-end"><input class="form-control form-control-sm item-selling text-end" value="${parseFloat(p.selling).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.م</td><td class="text-end fw-bold item-total">${parseFloat(itRow.total_cost).toFixed(2)} ج.م</td><td class="text-center no-print"><button class="btn btn-sm btn-danger btn-delete-item" data-item-id="${itRow.item_id_pk}">حذف</button></td>`;
+        const noRow = q('#no-items-row'); if (noRow) noRow.remove(); q('#items_tbody').appendChild(tr); attachRowHandlers(tr); renderGrand();
+      }).catch(err=>{ console.error(err); alert('خطأ في الاتصال'); });
+    } else {
+      // create flow: add to cart array and render as rows in tbody for preview
+      const existing = qa('#items_tbody tr').find(tr=> parseInt(tr.dataset.productId||0,10) === pid && !tr.dataset.itemId);
+      if (existing) {
+        const qel = existing.querySelector('.item-qty'); qel.value = (parseFloat(qel.value)||0) + qty; existing.querySelector('.item-qty').dispatchEvent(new Event('change')); return;
+      }
+      const noRow = q('#no-items-row'); if (noRow) noRow.remove();
+      const idx = qa('#items_tbody tr').length;
+      const tr = document.createElement('tr'); tr.dataset.productId = pid;
+      tr.innerHTML = `<td>${idx}</td><td>${escapeHtml(p.name)}</td><td class="text-center"><input class="form-control form-control-sm item-qty text-center" value="${qty.toFixed(2)}" step="0.01" min="0" style="width:100px;margin:auto"></td><td class="text-end"><input class="form-control form-control-sm item-cost text-end" value="${parseFloat(p.cost).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.م</td><td class="text-end"><input class="form-control form-control-sm item-selling text-end" value="${parseFloat(p.selling).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.م</td><td class="text-end fw-bold item-total">${(qty * p.cost).toFixed(2)} ج.م</td><td class="text-center no-print"><button class="btn btn-sm btn-danger remove-row">حذف</button></td>`;
+      q('#items_tbody').appendChild(tr);
+      attachLocalRowHandlers(tr); renderGrand();
+    }
+  });
+
+  // attach handlers for rows coming from server (existing items)
+  function attachRowHandlers(tr){
+    const qty = tr.querySelector('.item-qty'); const cost = tr.querySelector('.item-cost'); const selling = tr.querySelector('.item-selling'); const del = tr.querySelector('.btn-delete-item');
+    const itemId = tr.dataset.itemId;
+    if (qty) qty.addEventListener('change', function(){ sendUpdate(itemId, tr); });
+    if (cost) cost.addEventListener('change', function(){ sendUpdate(itemId, tr); });
+    if (selling) selling.addEventListener('change', function(){ sendUpdate(itemId, tr); });
+    if (del) del.addEventListener('click', function(){ if(!confirm('هل تريد حذف هذا البند؟')) return; const form = new URLSearchParams(); form.append('action','delete_item_ajax'); form.append('csrf_token', csrf); form.append('item_id', itemId); fetch(location.pathname, { method:'POST', body: form }).then(r=>r.json()).then(d=>{ if(!d.success) return alert(d.message||'خطأ'); tr.remove(); renumberRows(); q('#grand_total').innerText = parseFloat(d.grand_total).toFixed(2) + ' ج.م'; }).catch(e=>{console.error(e)}); });
+  }
+  function sendUpdate(itemId, tr){
+    const qv = parseFloat(tr.querySelector('.item-qty').value) || 0; const cv = parseFloat(tr.querySelector('.item-cost').value) || 0; const sv = parseFloat(tr.querySelector('.item-selling').value) || 0;
+    const form = new URLSearchParams(); form.append('action','update_item_ajax'); form.append('csrf_token', csrf); form.append('item_id', itemId); form.append('quantity', qv); form.append('cost_price', cv); form.append('selling_price', sv);
+    fetch(location.pathname, { method:'POST', body: form }).then(r=>r.json()).then(d=>{ if(!d.success) return alert(d.message || 'خطأ'); tr.querySelector('.item-total').innerText = parseFloat(d.total_cost).toFixed(2) + ' ج.م'; document.getElementById('grand_total').innerText = parseFloat(d.grand_total).toFixed(2) + ' ج.م'; }).catch(e=>{ console.error(e); });
+  }
+
+  // attach handlers for local rows (create flow)
+  function attachLocalRowHandlers(tr){
+    const qty = tr.querySelector('.item-qty'); const cost = tr.querySelector('.item-cost'); const selling = tr.querySelector('.item-selling'); const rem = tr.querySelector('.remove-row');
+    const updateLocal = ()=>{ const qv = parseFloat(qty.value)||0; const cv = parseFloat(cost.value)||0; tr.querySelector('.item-total').innerText = (qv*cv).toFixed(2) + ' ج.م'; renderGrand(); };
+    if (qty) qty.addEventListener('input', updateLocal); if (cost) cost.addEventListener('input', updateLocal); if (selling) selling.addEventListener('input', updateLocal);
+    if (rem) rem.addEventListener('click', function(){ if(!confirm('حذف البنود المؤقتة؟')) return; tr.remove(); if (qa('#items_tbody tr').length === 0){ const r = document.createElement('tr'); r.id='no-items-row'; r.innerHTML = '<td colspan="7" class="no-items">لا توجد بنود بعد — اختر منتجاً لإضافته.</td>'; q('#items_tbody').appendChild(r);} renumberRows(); renderGrand(); });
+  }
+
+  function renumberRows(){ qa('#items_tbody tr').forEach((r,i)=> r.children[0].innerText = i+1); }
+
+  // for any existing rows on load attach handlers
+  qa('#items_tbody tr').forEach(tr=>{ if (tr.id !== 'no-items-row') attachRowHandlers(tr); });
+  renderGrand();
+
+  // status buttons behavior (radio-like), and when invoiceId exists, send AJAX to change status
+  qa('.status-btn').forEach(btn=> btn.addEventListener('click', function(){ qa('.status-btn').forEach(x=>x.classList.remove('active')); this.classList.add('active'); const newStatus = this.dataset.status; q('#currentStatusLabel').innerText = this.innerText; if (invoiceId) { const form = new URLSearchParams(); form.append('action','change_status_ajax'); form.append('csrf_token', csrf); form.append('invoice_id', invoiceId); form.append('new_status', newStatus); fetch(location.pathname,{ method:'POST', body: form }).then(r=>r.json()).then(d=>{ if (!d.success) return alert(d.message||'فشل تغيير الحالة'); q('#currentStatusLabel').innerText = d.label || newStatus; }).catch(err=>{ console.error(err); }); } }));
+
+  // finalize (for create flow) - gather rows without data-item-id
+  q('#finalizeBtn').addEventListener('click', function(){
+    // confirm popup
+    const rows = qa('#items_tbody tr').filter(tr=> tr.id!=='no-items-row');
+    if (rows.length === 0) return alert('لا توجد بنود لإتمام الفاتورة');
+    // we expect supplier chosen externally; require supplier id in url? We'll ask user to provide supplier via query param supplier_id
+    const urlParams = new URLSearchParams(location.search);
+    const supplier_id = parseInt(urlParams.get('supplier_id')||0,10);
+    if (!supplier_id && !<?php echo $invoice ? 'true' : 'false'; ?>) return alert('يجب أن تحدد موردًا (مرر supplier_id في رابط الصفحة أو افتح الفاتورة المرتبطة بمورد موجود).');
+    // build preview
+    const preview = q('#confirmPreview'); preview.innerHTML = '';
+    const itemsPayload = [];
+    let total = 0;
+    rows.forEach(tr=>{
+      const pid = parseInt(tr.dataset.productId||0,10);
+      const qv = parseFloat(tr.querySelector('.item-qty').value) || 0;
+      const cv = parseFloat(tr.querySelector('.item-cost').value) || 0;
+      const sv = parseFloat(tr.querySelector('.item-selling').value) || 0;
+      const line = qv*cv; total += line;
+      const div = document.createElement('div'); div.style.display='flex'; div.style.justifyContent='space-between'; div.style.marginBottom='6px';
+      div.innerHTML = `<div><strong>${escapeHtml(tr.children[1].innerText)}</strong><div class="small-muted">كمية: ${qv} — سعر شراء: ${cv.toFixed(2)} — سعر بيع: ${sv.toFixed(2)}</div></div><div>${line.toFixed(2)}</div>`;
+      preview.appendChild(div);
+      itemsPayload.push({ product_id: pid, qty: qv, cost_price: cv, selling_price: sv });
     });
+    q('#confirm_total').innerText = total.toFixed(2);
+    q('#modalConfirm').style.display = 'flex';
+    // attach confirm send
+    q('#confirmSend').onclick = async function(){
+      const fd = new FormData(); fd.append('action','finalize_invoice_ajax'); fd.append('csrf_token', csrf); fd.append('supplier_id', supplier_id); fd.append('purchase_date', (new Date()).toISOString().slice(0,10)); fd.append('status', 'pending'); fd.append('notes', ''); fd.append('items', JSON.stringify(itemsPayload));
+      try {
+        const res = await fetch(location.pathname, { method:'POST', body: fd });
+        const data = await res.json();
+        if (!data.success) { alert(data.message || 'فشل'); return; }
+        alert(data.message || 'تمت إضافة الفاتورة');
+        // clear rows
+        q('#items_tbody').innerHTML = '<tr id="no-items-row"><td colspan="7" class="no-items">لا توجد بنود بعد — اختر منتجاً لإضافته.</td></tr>';
+        renderGrand(); q('#modalConfirm').style.display = 'none';
+      } catch (err) { console.error(err); alert('خطأ في الاتصال'); }
+    };
+  });
+
+  q('#confirmCancel').addEventListener('click', function(){ q('#modalConfirm').style.display = 'none'; });
+
+  // clear draft
+  q('#clearDraft').addEventListener('click', function(){ if (!confirm('تفريغ البنود؟')) return; q('#items_tbody').innerHTML = '<tr id="no-items-row"><td colspan="7" class="no-items">لا توجد بنود بعد — اختر منتجاً لإضافته.</td></tr>'; renderGrand(); });
+
+});
 </script>
 
 <?php
-// تحرير الموارد
-if (isset($result) && is_object($result)) $result->free();
-$conn->close();
 require_once BASE_DIR . 'partials/footer.php';
+ob_end_flush();
 ?>

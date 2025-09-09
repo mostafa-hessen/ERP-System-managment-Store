@@ -312,7 +312,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <div class="summary-card card-cost">
                 <div class="title">تكلفة البضاعة المباعة</div>
                 <div class="value"><?php echo number_format($grand_total_cost ?? 0,2); ?> <span class="currency-badge">ج.م</span></div>
-                <div class="sub">مجموع ما تكبدناه من تكلفة البضاعة المباعة في الفترة</div>
+                <div class="sub">مجموع  تكلفة البضاعة المباعة في الفترة</div>
             </div>
             <div class="summary-card card-profit">
                 <div class="title">صافي الربح</div>
@@ -438,7 +438,7 @@ document.addEventListener('DOMContentLoaded', function(){
             }
             // Build table
             let html = '<div class="table-responsive"><table class="table table-sm table-striped">';
-            html += '<thead><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:120px">سعر البيع</th><th style="width:120px">إجمالي البيع</th><th style="width:120px">سعر التكلفة</th><th style="width:120px">تكلفة السطر</th><th style="width:120px">ربح السطر</th></tr></thead><tbody>';
+            html += '<thead><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:120px">سعر البيع</th><th style="width:120px">إجمالي البيع</th><th style="width:120px">سعر التكلفة</th><th style="width:120px">اجمالي سعر التكلفه</th><th style="width:120px">صافي الربح</th></tr></thead><tbody>';
             let sumSell = 0, sumCost = 0, sumProfit = 0;
             for (const it of items) {
                 const qty = parseFloat(it.quantity || 0);

@@ -154,6 +154,21 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
         if ($s2) { $s2->bind_param("i",$invoice_id); $s2->execute(); $res2 = $s2->get_result(); while ($r = $res2->fetch_assoc()) $items[] = $r; $s2->close(); }
     }
 }
+// --- default delivered value handling (supports 'yes'/'no', 1/0, true/false)
+// put this after you load $invoice from DB
+$delivered_val = 'no'; // default = مؤجل
+if (!empty($invoice) && array_key_exists('delivered', $invoice)) {
+    $d = $invoice['delivered'];
+    if ($d === 'yes' || $d === '1' || $d === 1 || $d === 'true' || $d === true) {
+        $delivered_val = 'yes';
+    } else {
+        $delivered_val = 'no';
+    }
+}
+// If the form was submitted and we re-render (validation fail), prefer posted value
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delivered'])) {
+    $delivered_val = ($_POST['delivered'] === 'yes') ? 'yes' : 'no';
+}
 
 // Selected customer if invoice
 $session_customer_id = 0;
@@ -288,12 +303,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
 ?>
 
 <style>
-  
-/* بسيط لعرض الحالة: out-of-stock */
-.invoice-out  .product-item.out-of-stock { opacity: 0.6; filter: grayscale(30%); pointer-events: none; }
-.invoice-out  .product-item .badge-out { background:#c00; color:#fff; padding:2px 6px; border-radius:6px; font-size:12px; margin-top:6px; display:inline-block; }
-.invoice-out  tr.insufficient { background: #ffecec; }
-.invoice-out  .stock-warn { color:#a00; font-size:12px; margin-top:6px; }
 
 </style>
 <div class="invoice-out">
@@ -421,16 +430,30 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <span class="small-muted">اضغط على المنتج لإضافته — اختيار مكرر يزيد الكمية</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <label>حالة الفاتورة</label>
-            <select id="delivered" name="delivered" style="padding:6px;border-radius:6px;border:1px solid #ddd">
+            <!-- <label>حالة الفاتورة</laظbel> -->
+            <!-- <select id="delivered" name="delivered" style="padding:6px;border-radius:6px;border:1px solid #ddd">
               <option value="no">مؤجل</option>
               <option value="yes">تم الدفع</option>
-            </select>
+            </select> -->
+<div class="radio-group ">
+  <strong>الحالة:</strong>
+
+  <label class="radio-wrapper   " for="del_yes">
+    <input id="del_yes" type="radio" name="delivered" value="yes" <?php echo ($delivered_val === 'yes') ? 'checked' : ''; ?>>
+    <span>تم الدفع</span>
+  </label>
+
+  <label class="radio-wrapper mx-1" for="del_no">
+    <input id="del_no" type="radio" name="delivered" value="no" <?php echo ($delivered_val === 'no') ? 'checked' : ''; ?>>
+    <span>مؤجل</span>
+  </label>
+</div>
+
           </div>
         </div>
 
         <table>
-          <thead><tr><th>المنتج</th><th class="qtycol">الكمية</th><th class="unitpricecol">سعر البيع</th><th>سعر الشراء</th><th>الإجمالي</th><th class="no-print">حذف</th></tr></thead>
+          <thead><tr><th>المنتج</th><th class="qtycol">الكمية</th><th class="unitpricecol">سعر البيع</th><th class="uniteCost">سعر الشراء</th><th>الإجمالي</th><th class="no-print">حذف</th></tr></thead>
           <tbody id="itemsTableBody">
             <?php if(!empty($items)): foreach($items as $idx=>$it):
                 $pn=''; foreach($products_list as $pp) if($pp['id']==$it['product_id']) { $pn=$pp['name']; break; }
@@ -474,7 +497,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
           <strong>العملاء</strong>
           <div style="display:flex;gap:6px">
             <button type="button" id="openAddCustomerModal" class="btn ghost">إضافة</button>
-            <a href="<?php echo e(BASE_URL); ?>customer/insert.php" class="btn ghost" target="_blank">صفحة الإضافة</a>
+            <!-- <a href="<?php echo e(BASE_URL); ?>customer/insert.php" class="btn ghost" target="_blank">صفحة الإضافة</a> -->
           </div>
         </div>
 
