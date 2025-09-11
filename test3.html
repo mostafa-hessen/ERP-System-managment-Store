@@ -1,0 +1,563 @@
+<!-- save as manage_products_ui_fifo.html -->
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>إدارة المنتجات — FIFO (UI)</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#071021; --card:#071827; --muted:#9aa4b2; --accent:#06b6d4; --success:#16a34a; --danger:#ef4444;
+  --radius:12px; --container:1100px;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:28px;font-family:Inter,Arial;color:#e6eef6;background:linear-gradient(180deg,#071022,#071827);}
+.container{max-width:var(--container);margin:0 auto}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#0ea5a3);display:flex;align-items:center;justify-content:center;color:#022;font-weight:700}
+.title h1{margin:0;font-size:20px}
+.subtitle{color:var(--muted);font-size:13px}
+.controls{display:flex;gap:10px;align-items:center}
+.search{background:rgba(255,255,255,0.02);padding:6px;border-radius:10px;display:flex;gap:8px;align-items:center}
+.search input{background:transparent;border:none;color:inherit;padding:6px;min-width:200px}
+.btn{border:none;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600}
+.btn.primary{background:var(--accent);color:#022}
+.btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:var(--radius);padding:14px;box-shadow:0 12px 30px rgba(0,0,0,0.6)}
+.grid{display:grid;grid-template-columns:320px 1fr;gap:14px}
+.left-panel{display:flex;flex-direction:column;gap:12px}
+.product-item{padding:10px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;border:1px solid transparent;transition:all .12s}
+.product-item:hover{transform:translateY(-3px);border-color:rgba(255,255,255,0.03)}
+.small{font-size:13px;color:var(--muted)}
+.badge{padding:6px 10px;border-radius:8px;font-size:13px}
+.badge.green{background:rgba(22,163,74,0.12);color:var(--success)}
+.badge.red{background:rgba(239,68,68,0.12);color:var(--danger)}
+.table{width:100%;border-collapse:collapse}
+.table th{background:rgba(255,255,255,0.03);padding:10px;text-align:center;color:var(--muted)}
+.table td{padding:10px;border-top:1px solid rgba(255,255,255,0.03);text-align:center}
+.actions-col{display:flex;gap:6px;justify-content:center}
+.icon-btn{background:transparent;border:1px solid rgba(255,255,255,0.03);padding:6px;border-radius:8px;color:var(--muted);cursor:pointer}
+.icon-btn:hover{border-color:rgba(255,255,255,0.06)}
+/* modal */
+.modal-backdrop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,0.55);z-index:9999}
+.modal{background:#08121a;border-radius:12px;padding:18px;width:900px;max-width:95%;box-shadow:0 12px 40px rgba(0,0,0,0.7)}
+.modal h3{margin:0 0 8px 0}
+.form-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px}
+.form-row .full{grid-column:1 / -1}
+.input{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+.note{color:var(--muted);font-size:13px;margin-top:6px}
+/* batches table */
+.batches-table{width:100%;border-collapse:collapse;margin-top:10px}
+.batches-table th, .batches-table td{padding:8px;border-top:1px solid rgba(255,255,255,0.03);text-align:center}
+.footer-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+/* responsive */
+@media (max-width:900px){ .form-row{grid-template-columns:repeat(2,1fr)} .grid{grid-template-columns:1fr} }
+@media (max-width:600px){ .form-row{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="brand">
+      <div class="logo"><i class="fa-solid fa-boxes"></i></div>
+      <div class="title">
+        <h1>إدارة المنتجات — نظام دفعات (FIFO)</h1>
+        <div class="subtitle">كل عملية توريد تُنشئ دفعة؛ المبيعات تستهلك من أقدم دفعة أولاً.</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="search" title="بحث سريع">
+        <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+        <input id="searchInput" placeholder="بحث باسم المنتج أو بكوده..." />
+      </div>
+      <button class="btn ghost" id="exportBtn"><i class="fa-solid fa-file-export"></i></button>
+      <button class="btn primary" id="openAddProduct"><i class="fa-solid fa-plus"></i> إضافة منتج</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT: product list -->
+    <div class="left-panel">
+      <div class="card" style="height:100%;overflow:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong>قائمة المنتجات</strong>
+          <span class="small">إجمالي: <span id="totalProducts">0</span></span>
+        </div>
+        <div id="productList">
+          <!-- product items injected here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: detail / table -->
+    <div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong>تفاصيل المنتجات والدفعات</strong>
+            <div class="note">اضغط على زر "عرض الدفعات" لكل منتج لمراجعة الدفعات المرتبطة به (تاريخ، سعر الشراء، المتبقي).</div>
+          </div>
+          <div class="small">عرض سريع للرصيد والدفعات</div>
+        </div>
+
+        <div style="margin-top:12px" id="tableContainer">
+          <table class="table" aria-label="Products table">
+            <thead>
+              <tr>
+                <th>#</th><th>كود</th><th>اسم المنتج</th><th>وحدة</th><th>الرصيد</th><th>حد إعادة الطلب</th><th>سعر مرجعي</th><th>سعر بيع</th><th>إجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="productsTbody">
+              <!-- injected -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Product -->
+<div id="modalAdd" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3>إضافة منتج جديد</h3>
+    <p class="note">قم بتسجيل المنتج في الكتالوج. يمكنك إنشاء دفعة افتتاحية الآن (مفضل إذا لديك رصيد فعلي).</p>
+    <form id="formAdd">
+      <div class="form-row">
+        <div>
+          <label>كود المنتج</label>
+          <input name="product_code" id="add_code" class="input" required />
+        </div>
+        <div>
+          <label>اسم المنتج</label>
+          <input name="name" id="add_name" class="input" required />
+        </div>
+        <div>
+          <label>وحدة القياس</label>
+          <input name="unit" id="add_unit" class="input" required />
+        </div>
+
+        <div class="full">
+          <label>الوصف (اختياري)</label>
+          <textarea id="add_desc" class="input" style="min-height:70px"></textarea>
+        </div>
+
+        <div>
+          <label>سعر التكلفة (مرجعي)</label>
+          <input name="cost_price" id="add_cost" class="input" type="number" step="0.01" min="0" />
+        </div>
+        <div>
+          <label>سعر البيع</label>
+          <input name="selling_price" id="add_sell" class="input" type="number" step="0.01" min="0" />
+        </div>
+        <div>
+          <label>حد إعادة الطلب</label>
+          <input name="reorder" id="add_reorder" class="input" type="number" step="1" min="0" />
+        </div>
+
+        <!-- create initial batch -->
+        <div class="full" style="margin-top:6px;border-top:1px dashed rgba(255,255,255,0.03);padding-top:10px">
+          <label><input type="checkbox" id="createInitialBatch" /> إنشاء دفعة افتتاحية الآن</label>
+          <div id="initialFields" style="display:none;margin-top:10px">
+            <div class="form-row">
+              <div>
+                <label>الكمية الابتدائية</label>
+                <input id="init_qty" class="input" type="number" step="1" min="1" />
+              </div>
+              <div>
+                <label>سعر الشراء للوحدة</label>
+                <input id="init_cost" class="input" type="number" step="0.01" min="0" />
+              </div>
+              <div>
+                <label>تاريخ التوريد</label>
+                <input id="init_date" class="input" type="date" />
+              </div>
+              <div>
+                <label>تاريخ الانتهاء (اختياري)</label>
+                <input id="init_exp" class="input" type="date" />
+              </div>
+              <div class="full">
+                <label>ملاحظات الدفعة (اختياري)</label>
+                <input id="init_notes" class="input" />
+              </div>
+            </div>
+            <div class="note">عند الحفظ سيتم: إنشاء المنتج + إنشاء دفعة في stock_batches + تحديث ملخّص وحدات المنتج.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-actions">
+        <button type="button" class="btn ghost" onclick="closeModal('modalAdd')">إلغاء</button>
+        <button type="submit" class="btn primary">حفظ المنتج</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Edit Product (with Batches tab) -->
+<div id="modalEdit" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 id="editTitle">تعديل المنتج</h3>
+      <button class="icon-btn" onclick="closeModal('modalEdit')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:10px">
+      <div style="flex:1 1 55%">
+        <form id="formEdit">
+          <input type="hidden" id="edit_id" />
+          <div class="form-row">
+            <div>
+              <label>كود المنتج</label>
+              <input id="edit_code" class="input" required />
+            </div>
+            <div>
+              <label>اسم المنتج</label>
+              <input id="edit_name" class="input" required />
+            </div>
+            <div>
+              <label>وحدة القياس</label>
+              <input id="edit_unit" class="input" required />
+            </div>
+
+            <div class="full">
+              <label>الوصف</label>
+              <textarea id="edit_desc" class="input"></textarea>
+            </div>
+
+            <div>
+              <label>سعر مرجعي (cost_price)</label>
+              <input id="edit_cost" class="input" type="number" step="0.01" min="0" />
+              <div class="note">سعر مرجعي فقط — لا يغيّر دفعات المخزون السابقة. لتغيير تكلفة وحدات موجودة حرّك دفعات.</div>
+            </div>
+
+            <div>
+              <label>سعر البيع</label>
+              <input id="edit_sell" class="input" type="number" step="0.01" min="0" />
+            </div>
+
+            <div>
+              <label>ملخّص الرصيد (محسوب من الدُفعات)</label>
+              <input id="edit_stock_summary" class="input" disabled />
+            </div>
+
+          </div>
+
+          <div class="footer-actions">
+            <button type="button" class="btn ghost" onclick="closeModal('modalEdit')">إلغاء</button>
+            <button type="submit" class="btn primary">حفظ التغيير</button>
+          </div>
+        </form>
+      </div>
+
+      <div style="flex:1 1 45%;border-left:1px dashed rgba(255,255,255,0.03);padding-left:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>الدفعات لهذا المنتج</strong>
+          <button class="btn ghost" id="openAddBatchBtn"><i class="fa-solid fa-plus"></i> إضافة دفعة</button>
+        </div>
+
+        <table class="batches-table" id="batchesTable" style="width:100%;margin-top:8px">
+          <thead><tr><th>#</th><th>كمية</th><th>المتبقي</th><th>سعر الوحدة</th><th>تاريخ الشراء</th><th>انتهاء</th><th>إجراءات</th></tr></thead>
+          <tbody id="batchesTbody"><tr><td colspan="7" class="small">اختر منتجًا لعرض الدفعات</td></tr></tbody>
+        </table>
+        <div class="note" style="margin-top:8px">تعديل أو حذف دفعات يؤثر مباشرة في المخزون — يُطلب تأكيد ومحاضر جرد عند التعديل.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add/Edit Batch -->
+<div id="modalBatch" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog">
+    <h3 id="batchModalTitle">إضافة دفعة</h3>
+    <form id="formBatch">
+      <input type="hidden" id="batch_product_id" />
+      <input type="hidden" id="batch_id" />
+      <div class="form-row">
+        <div>
+          <label>الكمية</label>
+          <input id="batch_qty" class="input" type="number" step="1" min="1" required />
+        </div>
+        <div>
+          <label>سعر الشراء للوحدة</label>
+          <input id="batch_unit_cost" class="input" type="number" step="0.01" min="0" required />
+        </div>
+        <div>
+          <label>تاريخ الشراء</label>
+          <input id="batch_purchase_date" class="input" type="date" />
+        </div>
+        <div>
+          <label>تاريخ الانتهاء (اختياري)</label>
+          <input id="batch_expiry_date" class="input" type="date" />
+        </div>
+        <div class="full">
+          <label>ملاحظات</label>
+          <input id="batch_notes_input" class="input" />
+        </div>
+      </div>
+
+      <div class="footer-actions">
+        <button type="button" class="btn ghost" onclick="closeModal('modalBatch')">إلغاء</button>
+        <button type="submit" class="btn primary">حفظ الدفعة</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+/* ====== UI logic (تصويري) ======
+ - هذه الواجهة هي نموذج (front-end prototype).
+ - ربطها بالباك إند: عند الحفظ أو التعديل استبدل الدوال `localSave*` بمناداة الـ API (fetch).
+ - أهم الدوال الخلفية المطلوبة:
+   - POST /api/products (لإنشاء منتج) مع اختياري: initial_batch data
+   - PUT /api/products/:id (لتحديث بيانات المنتج المرجعي)
+   - GET /api/products (قائمة)
+   - GET /api/products/:id/batches (قائمة دفعات)
+   - POST /api/stock_batches (إضافة دفعة)
+   - PUT /api/stock_batches/:id (تعديل دفعة)
+   - DELETE /api/stock_batches/:id (حذف دفعة)
+ - كل عملية التي تغيّر دفعات أو مخزون يجب أن تكون ضمن Transaction في الباك إند وتُسجّل في Audit table.
+================================ */
+
+const sampleProducts = [
+  {id:1, product_code:'SKU-001', name:'علبة مادة', unit:'قطعة', units_in_stock:15, reorder_level:5, cost_price:20.00, selling_price:50.00},
+  {id:2, product_code:'SKU-044', name:'فلاتر زيت', unit:'حبة', units_in_stock:7, reorder_level:3, cost_price:85.00, selling_price:120.00},
+  {id:3, product_code:'SKU-090', name:'مرشح هواء', unit:'قطعة', units_in_stock:0, reorder_level:2, cost_price:40.00, selling_price:75.00}
+];
+
+const sampleBatches = {
+  1: [
+    {id:101, qty:10, remaining_qty:5, unit_cost:20.00, purchase_date:'2025-08-01', expiry_date:'2026-08-01', notes:'دفعة أغسطس'},
+    {id:102, qty:10, remaining_qty:7, unit_cost:40.00, purchase_date:'2025-09-01', expiry_date:null, notes:'دفعة سبتمبر'}
+  ],
+  2: [
+    {id:201, qty:10, remaining_qty:7, unit_cost:85.00, purchase_date:'2025-07-01', expiry_date:null, notes:''}
+  ],
+  3: []
+};
+
+let products = JSON.parse(JSON.stringify(sampleProducts));
+let batches = JSON.parse(JSON.stringify(sampleBatches));
+
+/* render product list and table */
+function renderProducts(filter='') {
+  const plist = document.getElementById('productList');
+  const tbody = document.getElementById('productsTbody');
+  plist.innerHTML = ''; tbody.innerHTML = '';
+  let showCount = 0;
+  products.forEach((p, idx) => {
+    if (filter && !(p.name.toLowerCase().includes(filter) || p.product_code.toLowerCase().includes(filter))) return;
+    // left item
+    const div = document.createElement('div'); div.className='product-item'; div.dataset.id=p.id;
+    div.innerHTML = `<div><strong>${p.name}</strong><div class="small">كود: ${p.product_code} — رصيد: ${p.units_in_stock}</div></div>
+      <div style="text-align:left"><div style="font-weight:700">${p.cost_price.toFixed(2)} ج</div></div>`;
+    div.onclick = ()=> openEditProduct(p.id);
+    plist.appendChild(div);
+
+    // table row
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.id}</td><td>${p.product_code}</td><td style="text-align:right"><strong>${p.name}</strong></td><td>${p.unit}</td><td>${p.units_in_stock}</td><td>${p.reorder_level}</td><td>${p.cost_price.toFixed(2)}</td><td>${p.selling_price.toFixed(2)}</td>
+      <td class="actions-col">
+        <button class="icon-btn" title="تعديل" onclick="event.stopPropagation(); openEditProduct(${p.id})"><i class="fa-solid fa-edit"></i></button>
+        <button class="icon-btn" title="عرض الدفعات" onclick="event.stopPropagation(); openEditProduct(${p.id}, true)"><i class="fa-solid fa-layer-group"></i></button>
+      </td>`;
+    tbody.appendChild(tr);
+    showCount++;
+  });
+  document.getElementById('totalProducts').innerText = showCount;
+}
+
+/* search */
+document.getElementById('searchInput').addEventListener('input', function(e){
+  renderProducts(e.target.value.trim().toLowerCase());
+});
+
+/* open/close modals */
+function openModal(id){ document.getElementById(id).style.display = 'flex'; document.getElementById(id).setAttribute('aria-hidden','false'); }
+function closeModal(id){ document.getElementById(id).style.display = 'none'; document.getElementById(id).setAttribute('aria-hidden','true'); }
+
+/* Add product flow */
+document.getElementById('openAddProduct').addEventListener('click', ()=> {
+  document.getElementById('formAdd').reset();
+  document.getElementById('initialFields').style.display='none';
+  document.getElementById('init_date').valueAsDate = new Date();
+  openModal('modalAdd');
+});
+document.getElementById('createInitialBatch').addEventListener('change', function(){ document.getElementById('initialFields').style.display = this.checked ? 'block' : 'none'; });
+
+document.getElementById('formAdd').addEventListener('submit', function(e){
+  e.preventDefault();
+  // collect values (front-end simulation). In real app: POST to /api/products with optional initial_batch
+  const code = document.getElementById('add_code').value.trim();
+  const name = document.getElementById('add_name').value.trim();
+  const unit = document.getElementById('add_unit').value.trim();
+  const desc = document.getElementById('add_desc').value.trim();
+  const cost = parseFloat(document.getElementById('add_cost').value) || 0;
+  const sell = parseFloat(document.getElementById('add_sell').value) || 0;
+  const reorder = parseInt(document.getElementById('add_reorder').value) || 0;
+  const createBatch = document.getElementById('createInitialBatch').checked;
+  const pid = (products.length? Math.max(...products.map(p=>p.id))+1 : 1);
+  const newProd = {id:pid, product_code:code, name:name, unit:unit, units_in_stock:0, reorder_level:reorder, cost_price:cost, selling_price:sell};
+  products.unshift(newProd);
+  if (createBatch) {
+    const qty = parseFloat(document.getElementById('init_qty').value) || 0;
+    const unit_cost = parseFloat(document.getElementById('init_cost').value) || 0;
+    const pdate = document.getElementById('init_date').value || (new Date()).toISOString().slice(0,10);
+    const exp = document.getElementById('init_exp').value || null;
+    const newBatch = {id: Math.floor(Math.random()*9000)+1000, qty:qty, remaining_qty:qty, unit_cost:unit_cost, purchase_date:pdate, expiry_date:exp, notes:document.getElementById('init_notes').value||''};
+    if (!batches[pid]) batches[pid] = [];
+    batches[pid].push(newBatch);
+    // update summary
+    newProd.units_in_stock = batches[pid].reduce((s,b)=>s+b.remaining_qty,0);
+  }
+  renderProducts();
+  closeModal('modalAdd');
+  alert('تم إنشاء المنتج (تصوري). في التطبيق الحقيقي سيتم إرسال بيانات للـ API داخل Transaction لإنشاء المنتج وربط دفعة افتتاحية.');
+});
+
+/* Edit product + batches */
+function openEditProduct(productId, openBatches=false){
+  const p = products.find(x=>x.id===productId); if(!p) return alert('منتج غير موجود');
+  document.getElementById('edit_id').value = p.id;
+  document.getElementById('edit_code').value = p.product_code;
+  document.getElementById('edit_name').value = p.name;
+  document.getElementById('edit_unit').value = p.unit;
+  document.getElementById('edit_desc').value = p.description || '';
+  document.getElementById('edit_cost').value = p.cost_price.toFixed(2);
+  document.getElementById('edit_sell').value = p.selling_price.toFixed(2);
+  document.getElementById('edit_stock_summary').value = p.units_in_stock;
+  // populate batches
+  renderBatchesTable(productId);
+  openModal('modalEdit');
+  if (openBatches) document.getElementById('openAddBatchBtn').focus();
+}
+
+/* save edit product (front-end) */
+document.getElementById('formEdit').addEventListener('submit', function(e){
+  e.preventDefault();
+  const id = parseInt(document.getElementById('edit_id').value,10);
+  const p = products.find(x=>x.id===id); if(!p) return;
+  // Update only reference fields (code, name, unit, description, selling_price, cost_price(ref))
+  p.product_code = document.getElementById('edit_code').value.trim();
+  p.name = document.getElementById('edit_name').value.trim();
+  p.unit = document.getElementById('edit_unit').value.trim();
+  p.description = document.getElementById('edit_desc').value.trim();
+  p.cost_price = parseFloat(document.getElementById('edit_cost').value) || p.cost_price; // reference
+  p.selling_price = parseFloat(document.getElementById('edit_sell').value) || p.selling_price;
+  // in real app: PUT /api/products/:id (only metadata)
+  renderProducts();
+  closeModal('modalEdit');
+  alert('تم حفظ التعديلات (تصوري). لتعديل المخزون الحقيقي عدّل/أضف/امسح دفعات من اللوحة اليمنى.');
+});
+
+/* render batches in edit modal */
+function renderBatchesTable(productId) {
+  const tb = document.getElementById('batchesTbody');
+  tb.innerHTML = '';
+  const list = batches[productId] || [];
+  if (!list.length) { tb.innerHTML = '<tr><td colspan="7" class="small">لا توجد دفعات لهذا المنتج</td></tr>'; return; }
+  list.forEach((b, i)=> {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${b.id}</td><td>${b.qty}</td><td>${b.remaining_qty}</td><td>${b.unit_cost.toFixed(2)}</td><td>${b.purchase_date||''}</td><td>${b.expiry_date||'-'}</td>
+      <td class="actions-col">
+        <button class="icon-btn" onclick="openBatchEdit(${productId}, ${b.id})" title="تعديل"><i class="fa-solid fa-pen"></i></button>
+        <button class="icon-btn" onclick="deleteBatch(${productId}, ${b.id})" title="حذف"><i class="fa-solid fa-trash"></i></button>
+      </td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* open Add batch modal */
+document.getElementById('openAddBatchBtn').addEventListener('click', function(){
+  const pid = parseInt(document.getElementById('edit_id').value,10);
+  if (!pid) return alert('اختر منتجًا أولاً');
+  document.getElementById('batchModalTitle').innerText = 'إضافة دفعة';
+  document.getElementById('batch_product_id').value = pid;
+  document.getElementById('batch_id').value = '';
+  document.getElementById('formBatch').reset();
+  document.getElementById('batch_purchase_date').valueAsDate = new Date();
+  openModal('modalBatch');
+});
+
+function openBatchEdit(productId, batchId) {
+  const b = (batches[productId]||[]).find(x=>x.id===batchId);
+  if (!b) return alert('دفعة غير موجودة');
+  document.getElementById('batchModalTitle').innerText = 'تعديل الدفعة #' + b.id;
+  document.getElementById('batch_product_id').value = productId;
+  document.getElementById('batch_id').value = b.id;
+  document.getElementById('batch_qty').value = b.qty;
+  document.getElementById('batch_unit_cost').value = b.unit_cost.toFixed(2);
+  document.getElementById('batch_purchase_date').value = b.purchase_date || '';
+  document.getElementById('batch_expiry_date').value = b.expiry_date || '';
+  document.getElementById('batch_notes_input').value = b.notes || '';
+  openModal('modalBatch');
+}
+
+/* save batch (add or edit) */
+document.getElementById('formBatch').addEventListener('submit', function(e){
+  e.preventDefault();
+  const pid = parseInt(document.getElementById('batch_product_id').value,10);
+  const bid = document.getElementById('batch_id').value;
+  const qty = parseFloat(document.getElementById('batch_qty').value) || 0;
+  const unit_cost = parseFloat(document.getElementById('batch_unit_cost').value) || 0;
+  const pdate = document.getElementById('batch_purchase_date').value || (new Date()).toISOString().slice(0,10);
+  const exp = document.getElementById('batch_expiry_date').value || null;
+  const notes = document.getElementById('batch_notes_input').value || '';
+  if (!pid || qty <= 0) return alert('الرجاء إدخال كمية وسعر صحيحين');
+  if (!batches[pid]) batches[pid] = [];
+  if (!bid) {
+    // add
+    const newId = Math.floor(Math.random()*9000)+2000;
+    const newB = {id:newId, qty:qty, remaining_qty:qty, unit_cost:unit_cost, purchase_date:pdate, expiry_date:exp, notes:notes};
+    batches[pid].push(newB);
+  } else {
+    // edit existing: careful - editing qty must consider sold quantity (qty-remaining). Here we allow editing but in real app validate.
+    const bidx = batches[pid].findIndex(x=>x.id == bid);
+    if (bidx === -1) return alert('دفعة غير موجودة');
+    // compute already used = qty_old - remaining_old
+    const old = batches[pid][bidx];
+    const used = old.qty - old.remaining_qty;
+    if (qty < used) {
+      if (!confirm('الكمية الجديدة أقل من الكمية المباعة/المستخدمة من هذه الدفعة. هل تريد المتابعة؟')) return;
+    }
+    batches[pid][bidx].qty = qty;
+    // keep remaining at min(qty - used, new qty)
+    batches[pid][bidx].remaining_qty = Math.max(0, qty - used);
+    batches[pid][bidx].unit_cost = unit_cost;
+    batches[pid][bidx].purchase_date = pdate;
+    batches[pid][bidx].expiry_date = exp;
+    batches[pid][bidx].notes = notes;
+  }
+  // update product summary
+  const prod = products.find(x=>x.id === pid);
+  prod.units_in_stock = batches[pid].reduce((s,b)=>s+b.remaining_qty,0);
+  renderBatchesTable(pid);
+  renderProducts();
+  closeModal('modalBatch');
+  alert('تم حفظ الدفعة (تصوري). يجب تنفيذ تحقق إضافي في الباك إند قبل تعديل دفعات قد تم استهلاكها.');
+});
+
+/* delete batch */
+function deleteBatch(productId, batchId) {
+  if (!confirm('هل تريد حذف هذه الدفعة؟ حذف دفعات قد تم استهلاكها يسبب عدم اتساق.')) return;
+  batches[productId] = (batches[productId]||[]).filter(b=>b.id !== batchId);
+  // update summary
+  const prod = products.find(x=>x.id === productId);
+  prod.units_in_stock = (batches[productId]||[]).reduce((s,b)=>s+b.remaining_qty,0);
+  renderBatchesTable(productId);
+  renderProducts();
+}
+
+/* initial render */
+renderProducts();
+
+/* Export (demo) */
+document.getElementById('exportBtn').addEventListener('click', ()=> {
+  alert('تصدير (تصوري) — ربط مع endpoint لتصدير CSV أو Excel.');
+});
+</script>
+</body>
+</html>

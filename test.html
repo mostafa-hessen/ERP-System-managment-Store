@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>إضافة منتج جديد — UI (مع دفعة ابتدائية)</title>
+
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root{
+      --bg: #0b1220;
+      --panel: #071225;
+      --muted: #94a3b8;
+      --accent: #06b6d4;
+      --success: #16a34a;
+      --danger: #ef4444;
+      --card-radius: 12px;
+      --gap: 14px;
+      --container: 1000px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: "Inter", "Segoe UI", Tahoma, Arial;
+      background: linear-gradient(180deg,#071022 0%, #071827 70%);
+      color:#e6eef6;
+      -webkit-font-smoothing:antialiased;
+      min-height:100vh;
+      padding:28px;
+      display:flex;
+      justify-content:center;
+    }
+
+    .wrap{width:100%;max-width:var(--container)}
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:var(--card-radius);
+      box-shadow: 0 8px 30px rgba(2,6,23,0.7);
+      overflow:hidden;
+    }
+
+    .card-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:18px 20px;
+      border-bottom:1px solid rgba(255,255,255,0.03);
+      background: linear-gradient(90deg, rgba(6,182,212,0.06), transparent);
+    }
+    .card-header .left{display:flex;gap:12px;align-items:center}
+    .brand{
+      width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#0ea5a3);display:flex;align-items:center;justify-content:center;color:#022;font-weight:700;font-size:20px;
+      box-shadow:0 8px 20px rgba(6,182,212,0.08);
+    }
+    .card-header h2{margin:0;font-size:18px}
+    .card-header p{margin:0;color:var(--muted);font-size:13px}
+
+    .card-body{padding:20px}
+    form .row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type="text"], input[type="number"], input[type="date"], textarea, select{
+      width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-size:14px;
+    }
+    textarea{min-height:90px;resize:vertical}
+    .full{grid-column:1 / -1}
+    .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+    .btn{padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+    .btn.primary{background:var(--accent);color:#022}
+    .btn.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+    .hint{font-size:13px;color:var(--muted);margin-bottom:10px}
+
+    /* initial batch block */
+    .batch-block{background:rgba(255,255,255,0.02);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.02);margin-top:12px}
+    .toggle-row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .checkbox{display:flex;gap:8px;align-items:center}
+    .badge{display:inline-block;padding:6px 10px;border-radius:8px;font-size:13px}
+    .badge.info{background:rgba(6,182,212,0.08);color:var(--accent)}
+    .badge.warn{background:rgba(245,158,11,0.08);color:#f59e0b}
+
+    /* responsive */
+    @media (max-width:900px){
+      form .row{grid-template-columns:repeat(2,1fr)}
+    }
+    @media (max-width:600px){
+      form .row{grid-template-columns:1fr}
+    }
+
+    /* small helpers */
+    .muted{color:var(--muted);font-size:13px}
+    .error{color:var(--danger);font-size:13px;margin-top:6px}
+    .success{color:var(--success);font-size:13px;margin-top:6px}
+
+    /* preview area */
+    .preview{margin-top:18px;padding:12px;border-radius:10px;border:1px dashed rgba(255,255,255,0.03);background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent)}
+    .preview .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .preview b{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="card-header">
+        <div class="left">
+          <div class="brand"><i class="fa-solid fa-box-open"></i></div>
+          <div>
+            <h2>إضافة منتج جديد</h2>
+            <p>سجل المنتج في الكتالوج و (اختياري) إنشاء دفعة افتتاحية لتتبع FIFO من البداية.</p>
+          </div>
+        </div>
+
+        <div class="right">
+          <div class="hint">حقل <span class="badge info">سعر التكلفة</span> يستخدم كمرجع في حالة عدم وجود دفعات.</div>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <!-- form -->
+        <form id="productForm" onsubmit="return onSubmit(event)">
+          <div class="row">
+            <div>
+              <label for="product_code">كود المنتج</label>
+              <input id="product_code" name="product_code" type="text" placeholder="مثال: SKU-001" required />
+            </div>
+
+            <div>
+              <label for="name">اسم المنتج</label>
+              <input id="name" name="name" type="text" placeholder="مثال: علبة مادة" required />
+            </div>
+
+            <div>
+              <label for="unit_of_measure">وحدة القياس</label>
+              <input id="unit_of_measure" name="unit_of_measure" type="text" placeholder="قطعة / كجم" required />
+            </div>
+
+            <div class="full">
+              <label for="description">الوصف (اختياري)</label>
+              <textarea id="description" name="description" placeholder="تفاصيل أو ملاحظات عن المنتج"></textarea>
+            </div>
+
+            <div>
+              <label for="cost_price">سعر التكلفة (مرجعي)</label>
+              <input id="cost_price" name="cost_price" type="number" step="0.01" min="0" value="0.00" required />
+            </div>
+
+            <div>
+              <label for="selling_price">سعر البيع</label>
+              <input id="selling_price" name="selling_price" type="number" step="0.01" min="0" value="0.00" required />
+            </div>
+
+            <div>
+              <label for="reorder_level">حد إعادة الطلب (اختياري)</label>
+              <input id="reorder_level" name="reorder_level" type="number" step="1" min="0" placeholder="مثال: 5" />
+            </div>
+
+          </div>
+
+          <!-- toggle for initial batch -->
+          <div class="batch-block" id="batchBlock">
+            <div class="toggle-row">
+              <div class="checkbox">
+                <input id="create_initial_batch" type="checkbox" />
+                <label for="create_initial_batch"><strong>إنشاء دفعة افتتاحية لهذا المنتج</strong></label>
+              </div>
+              <div class="muted">فعِّل لو عندك رصيد فعلي الآن وتريد تتبعه عبر دفعات.</div>
+            </div>
+
+            <div id="initialFields" style="display:none">
+              <div class="row">
+                <div>
+                  <label for="initial_qty">الكمية الابتدائية</label>
+                  <input id="initial_qty" name="initial_qty" type="number" min="0" step="1" />
+                </div>
+
+                <div>
+                  <label for="initial_unit_cost">سعر الشراء للوحدة</label>
+                  <input id="initial_unit_cost" name="initial_unit_cost" type="number" step="0.01" min="0" />
+                </div>
+
+                <div>
+                  <label for="initial_purchase_date">تاريخ الشراء</label>
+                  <input id="initial_purchase_date" name="initial_purchase_date" type="date" value="" />
+                </div>
+
+                <div>
+                  <label for="initial_expiry_date">تاريخ الانتهاء (اختياري)</label>
+                  <input id="initial_expiry_date" name="initial_expiry_date" type="date" />
+                </div>
+
+                <div>
+                  <label for="initial_supplier">المورد (اختياري)</label>
+                  <select id="initial_supplier" name="initial_supplier">
+                    <option value="">-- اختر مورد --</option>
+                    <option value="1">مورد ١</option>
+                    <option value="2">مورد ٢</option>
+                  </select>
+                </div>
+
+                <div class="full">
+                  <label for="initial_notes">ملاحظات الدفعة (اختياري)</label>
+                  <input id="initial_notes" name="initial_notes" type="text" placeholder="مثال: فاتورة مورد رقم 123" />
+                </div>
+              </div>
+
+              <div class="muted small" style="margin-top:8px">
+                عند الضغط على حفظ سيتم:
+                <ul style="margin:6px 0 0 16px; padding-left:8px; color:var(--muted)">
+                  <li>إنشاء المنتج في جدول <code>products</code>.</li>
+                  <li>إنشاء دفعة افتتاحية في جدول <code>stock_batches</code> بكمية وسعر الشراء المدخَل.</li>
+                  <li>تحديث رصيد المنتج الملخّص (units_in_stock) ليعكس مجموع الدفعات المتبقية.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- preview -->
+          <div class="preview">
+            <div class="row" style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div class="muted">معاينة سريعة:</div>
+                <div style="margin-top:6px">
+                  <div>اسم المنتج: <b id="prv-name">-</b></div>
+                  <div>كود: <b id="prv-code">-</b> — وحدة: <b id="prv-unit">-</b></div>
+                </div>
+              </div>
+
+              <div style="text-align:left">
+                <div class="muted">دفعة ابتدائية:</div>
+                <div id="prv-batch" style="margin-top:6px;color:var(--muted)">غير مُنشأة</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="btn secondary" onclick="onCancel()">إلغاء</button>
+            <button type="submit" class="btn primary">حفظ المنتج</button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // جاهز للاستخدام: تهيئة التواريخ الافتراضية
+    document.getElementById('initial_purchase_date').valueAsDate = new Date();
+
+    const createChk = document.getElementById('create_initial_batch');
+    const initialFields = document.getElementById('initialFields');
+
+    // show/hide initial batch fields
+    createChk.addEventListener('change', () => {
+      initialFields.style.display = createChk.checked ? 'block' : 'none';
+      updatePreview();
+    });
+
+    // update preview live
+    const nameInput = document.getElementById('name');
+    const codeInput = document.getElementById('product_code');
+    const unitInput = document.getElementById('unit_of_measure');
+
+    const prvName = document.getElementById('prv-name');
+    const prvCode = document.getElementById('prv-code');
+    const prvUnit = document.getElementById('prv-unit');
+    const prvBatch = document.getElementById('prv-batch');
+
+    [nameInput, codeInput, unitInput].forEach(el => el.addEventListener('input', updatePreview));
+    ['initial_qty','initial_unit_cost','initial_purchase_date'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', updatePreview);
+    });
+
+    function updatePreview(){
+      prvName.textContent = nameInput.value || '-';
+      prvCode.textContent = codeInput.value || '-';
+      prvUnit.textContent = unitInput.value || '-';
+
+      if (createChk.checked) {
+        const q = document.getElementById('initial_qty').value || '0';
+        const cost = document.getElementById('initial_unit_cost').value || '0.00';
+        const date = document.getElementById('initial_purchase_date').value || '';
+        prvBatch.innerHTML = `<b>${q}</b> وحدة بسعر <b>${parseFloat(cost).toFixed(2)}</b> ${date ? ' (تاريخ: ' + date + ')' : ''}`;
+      } else {
+        prvBatch.textContent = 'غير مُنشأة';
+      }
+    }
+
+    updatePreview();
+
+    // form submit handler (تصويري — هنا ترسل عبر POST إلى الخادم)
+    function onSubmit(e){
+      e.preventDefault();
+
+      // تحقق بسيط قبل الإرسال
+      const code = codeInput.value.trim();
+      const name = nameInput.value.trim();
+      const unit = unitInput.value.trim();
+      const cost = parseFloat(document.getElementById('cost_price').value);
+      const selling = parseFloat(document.getElementById('selling_price').value);
+
+      if (!code || !name || !unit) {
+        alert('الرجاء ملء الحقول الأساسية: كود، اسم، وحدة قياس.');
+        return false;
+      }
+      if (isNaN(cost) || cost < 0) { alert('سعر التكلفة غير صحيح'); return false; }
+      if (isNaN(selling) || selling < 0) { alert('سعر البيع غير صحيح'); return false; }
+
+      // لو اختار المستخدم إنشاء دفعة ابتدائية — شروط إضافية
+      if (createChk.checked) {
+        const q = Number(document.getElementById('initial_qty').value);
+        const uc = Number(document.getElementById('initial_unit_cost').value);
+        if (!q || q <= 0) { alert('الرجاء إدخال كمية ابتدائية صحيحة أكبر من صفر'); return false; }
+        if (isNaN(uc) || uc < 0) { alert('سعر الشراء الابتدائي غير صحيح'); return false; }
+      }
+
+      // هنا بدل alert نفّذ طلب POST إلى السيرفر (AJAX أو فورم عادي)
+      // مثال: نجمع البيانات ونطبعها بالكونسول (لتنفيذ فعلي استبدل هذا بالـ fetch أو form.submit)
+      const payload = {
+        product_code: code,
+        name: name,
+        unit_of_measure: unit,
+        description: document.getElementById('description').value,
+        cost_price: cost,
+        selling_price: selling,
+        reorder_level: document.getElementById('reorder_level').value || 0,
+        create_initial_batch: createChk.checked,
+        initial_qty: document.getElementById('initial_qty').value,
+        initial_unit_cost: document.getElementById('initial_unit_cost').value,
+        initial_purchase_date: document.getElementById('initial_purchase_date').value,
+        initial_expiry_date: document.getElementById('initial_expiry_date').value,
+        initial_supplier: document.getElementById('initial_supplier').value,
+        initial_notes: document.getElementById('initial_notes').value
+      };
+
+      console.log('DATA TO SEND:', payload);
+      alert('تم التحقق من الحقول على الواجهة. الآن أرسل البيانات إلى الخادم لإنشاء المنتج والدفعة (مثال تصويري).');
+
+      // لو عايز أزود لك هنا مثال fetch() يرسل POST إلى add_product.php مع CSRF و معالجة الاستجابة أعملهولك
+      return false;
+    }
+
+    function onCancel(){
+      if (confirm('هل تريد إلغاء الإدخال والعودة؟')) {
+        // إعادة التعيين البسيطة
+        document.getElementById('productForm').reset();
+        document.getElementById('initialFields').style.display = 'none';
+        updatePreview();
+      }
+    }
+
+  </script>
+</body>
+</html>

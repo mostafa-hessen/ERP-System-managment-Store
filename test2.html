@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>إدارة المنتجات — UI</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#071421;
+      --card: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      --muted:#94a3b8;
+      --accent:#06b6d4;
+      --success:#16a34a;
+      --danger:#ef4444;
+      --radius:12px;
+      --container:1100px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;padding:28px;min-height:100vh;
+      font-family: Inter, "Segoe UI", Roboto, Arial;
+      background: linear-gradient(180deg,#071421 0%, #061827 80%);
+      color:#e6eef6;
+    }
+    .wrap{max-width:var(--container);margin:0 auto}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#0ea5a3);display:flex;align-items:center;justify-content:center;color:#022;font-weight:700;font-size:18px}
+    h1{margin:0;font-size:20px}
+    .subtitle{color:var(--muted);font-size:13px}
+
+    .actions{display:flex;gap:8px;align-items:center}
+    .search{display:flex;gap:8px;align-items:center;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,0.02)}
+    .search input{background:transparent;border:none;color:inherit;padding:6px;min-width:220px}
+    .btn{border:none;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600}
+    .btn.primary{background:var(--accent);color:#022}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+    .btn.warn{background:#f59e0b;color:#071421}
+    .card{background:var(--card);border-radius:var(--radius);padding:14px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    .infoRow{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:var(--muted);font-size:13px}
+
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    thead th{background:rgba(255,255,255,0.03);padding:12px;text-align:center;color:var(--muted);font-weight:700}
+    tbody td{padding:12px;border-top:1px solid rgba(255,255,255,0.02);text-align:center}
+    tbody tr:hover td{background:rgba(255,255,255,0.01)}
+    .small{font-size:13px;color:var(--muted)}
+
+    .icon-btn{background:transparent;border:1px solid rgba(255,255,255,0.03);padding:6px;border-radius:8px;cursor:pointer;color:var(--muted);margin-inline:2px}
+    .icon-btn:hover{border-color:rgba(255,255,255,0.06)}
+    .badge{display:inline-block;padding:6px 10px;border-radius:8px;font-size:13px}
+    .badge.green{background:rgba(22,163,74,0.12);color:var(--success)}
+    .badge.orange{background:rgba(245,158,11,0.12);color:#f59e0b}
+
+    /* modal */
+    .modal-backdrop{position:fixed;inset:0;background:linear-gradient(180deg, rgba(2,6,23,0.6), rgba(2,6,23,0.8));display:none;align-items:center;justify-content:center;padding:20px;z-index:999}
+    .modal{background:#08121a;border-radius:12px;padding:18px;max-width:880px;width:100%;box-shadow:0 10px 40px rgba(2,6,23,0.8)}
+    .modal h3{margin:0 0 8px 0}
+    .modal .close{background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer}
+
+    .form-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+    .form-row .full{grid-column:1 / -1}
+    input, select, textarea{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:8px;color:inherit}
+    textarea{min-height:80px}
+
+    @media (max-width:900px){
+      .form-row{grid-template-columns:repeat(2,1fr)}
+    }
+    @media (max-width:600px){
+      .form-row{grid-template-columns:1fr}
+      .search input{min-width:80px}
+      thead th:nth-child(4), tbody td:nth-child(4), thead th:nth-child(7), tbody td:nth-child(7) { display:none; }
+    }
+
+    .empty{padding:20px;text-align:center;color:var(--muted)}
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"><i class="fa-solid fa-boxes"></i></div>
+        <div>
+          <h1>إدارة المنتجات</h1>
+          <div class="subtitle">قائمة المنتجات — نظام دفعات FIFO (عرض/إضافة دفعات)</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <div class="search" title="ابحث باسم المنتج أو بكوده">
+          <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+          <input id="q" placeholder="بحث باسم المنتج أو بالكود..." autocomplete="off">
+          <button class="btn ghost" id="clearSearch" title="مسح"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <button class="btn primary" id="addProductBtn"><i class="fa-solid fa-plus me-2"></i>إضافة منتج</button>
+        <button class="btn ghost" id="exportBtn"><i class="fa-solid fa-file-export"></i></button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="infoRow">
+        <div class="small">عرض <span id="shownCount">0</span> منتج — إجمالي قيمة مخزون تقريبي: <span class="badge green" id="inventoryValue">0 ج</span></div>
+        <div class="small">ابحث أو استخدم أزرار كل صف لعرض الدفعات أو إضافة دفعة جديدة.</div>
+      </div>
+
+      <div style="overflow:auto">
+        <table aria-label="قائمة المنتجات">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>كود</th>
+              <th>اسم المنتج</th>
+              <th class="small">وحدة</th>
+              <th>الرصيد</th>
+              <th>حد إعادة الطلب</th>
+              <th class="small">تاريخ الإضافة</th>
+              <th>سعر الشراء</th>
+              <th>سعر البيع</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="productsTbody">
+            <!-- rows injected by JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <div id="noResult" class="empty" style="display:none">لا توجد منتجات مطابقة لعملية البحث.</div>
+    </div>
+  </div>
+
+  <!-- Modal: batches & add batch -->
+  <div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-hidden="true">
+    <div class="modal" role="document">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <h3 id="modalTitle">دفعات المنتج</h3>
+          <div class="small" id="modalSubtitle">تفاصيل الدفعات وإضافة دفعة جديدة</div>
+        </div>
+        <div><button class="close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button></div>
+      </div>
+
+      <div id="modalBody">
+        <div id="batchesArea" style="margin-bottom:12px">جاري التحميل...</div>
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+        <div>
+          <h4 style="margin:6px 0">إضافة دفعة جديدة</h4>
+          <form id="addBatchForm">
+            <div class="form-row">
+              <div>
+                <label>الكمية</label>
+                <input type="number" name="qty" id="batch_qty" min="1" required />
+              </div>
+              <div>
+                <label>سعر الشراء للوحدة</label>
+                <input type="number" step="0.01" name="unit_cost" id="batch_unit_cost" required />
+              </div>
+              <div>
+                <label>تاريخ الشراء</label>
+                <input type="date" name="purchase_date" id="batch_date" />
+              </div>
+              <div>
+                <label>تاريخ الانتهاء (اختياري)</label>
+                <input type="date" name="expiry_date" id="batch_expiry" />
+              </div>
+              <div>
+                <label>المورد (اختياري)</label>
+                <select id="batch_supplier" name="supplier">
+                  <option value="">-- اختر مورد --</option>
+                  <option value="1">مورد 1</option>
+                  <option value="2">مورد 2</option>
+                </select>
+              </div>
+              <div class="full">
+                <label>ملاحظات (اختياري)</label>
+                <input type="text" id="batch_notes" name="notes" />
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+              <button type="button" class="btn ghost" onclick="closeModal()">إلغاء</button>
+              <button type="submit" class="btn primary">إضافة الدفعة</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal: Add Product (simple) -->
+  <div id="addProductModalBackdrop" class="modal-backdrop" style="display:none">
+    <div class="modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <h3>إضافة منتج جديد</h3>
+          <div class="small">أنشئ منتج وأضف دفعة افتتاحية إن رغبت.</div>
+        </div>
+        <div><button class="close" onclick="closeAddProduct()"><i class="fa-solid fa-xmark"></i></button></div>
+      </div>
+
+      <form id="addProductForm">
+        <div class="form-row">
+          <div>
+            <label>كود المنتج</label>
+            <input id="np_code" required />
+          </div>
+          <div>
+            <label>اسم المنتج</label>
+            <input id="np_name" required />
+          </div>
+          <div>
+            <label>وحدة القياس</label>
+            <input id="np_unit" required />
+          </div>
+          <div>
+            <label>سعر التكلفة (مرجعي)</label>
+            <input id="np_cost" type="number" step="0.01" required />
+          </div>
+          <div>
+            <label>سعر البيع</label>
+            <input id="np_sell" type="number" step="0.01" required />
+          </div>
+          <div>
+            <label>حد إعادة الطلب</label>
+            <input id="np_reorder" type="number" step="1" />
+          </div>
+          <div class="full">
+            <label>وصف (اختياري)</label>
+            <textarea id="np_desc"></textarea>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+          <button type="button" class="btn ghost" onclick="closeAddProduct()">إلغاء</button>
+          <button type="submit" class="btn primary">إضافة المنتج</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // بيانات تجريبية (في المشروع الفعلي استبدلها بتحميل من الخادم)
+    let products = [
+      {id:1, code:'SKU-001', name:'علبة مادة', unit:'قطعة', stock:15, reorder:5, added:'2025-09-01', cost:20.00, sell:50.00},
+      {id:2, code:'SKU-044', name:'فلاتر زيت', unit:'حبة', stock:7, reorder:3, added:'2025-07-19', cost:85.00, sell:120.00},
+      {id:3, code:'SKU-090', name:'مرشح هواء', unit:'قطعة', stock:0, reorder:2, added:'2025-03-11', cost:40.00, sell:75.00}
+    ];
+
+    // دفعات تجريبية مرتبطة بالمنتجات
+    let batches = {
+      1: [
+        {id:101, qty:10, remaining:5, unit_cost:20.00, purchase_date:'2025-08-01', expiry:'2026-08-01', notes:''},
+        {id:102, qty:10, remaining:7, unit_cost:40.00, purchase_date:'2025-09-01', expiry:null, notes:'توريد سبتمبر'}
+      ],
+      2: [
+        {id:201, qty:10, remaining:7, unit_cost:85.00, purchase_date:'2025-07-01', expiry:null, notes:''}
+      ],
+      3: []
+    };
+
+    const tbody = document.getElementById('productsTbody');
+    const shownCount = document.getElementById('shownCount');
+    const inventoryValue = document.getElementById('inventoryValue');
+
+    function renderProducts(list) {
+      tbody.innerHTML = '';
+      if (!list || list.length === 0) {
+        document.getElementById('noResult').style.display = 'block';
+        document.querySelector('.card table').style.display = 'none';
+        shownCount.textContent = 0;
+        inventoryValue.textContent = '0 ج';
+        return;
+      }
+      document.getElementById('noResult').style.display = 'none';
+      document.querySelector('.card table').style.display = 'table';
+      let invVal = 0;
+      list.forEach(p=>{
+        invVal += (p.stock || 0) * (p.cost || p.cost === 0 ? p.cost : 0);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${p.id}</td>
+          <td>${escapeHtml(p.code)}</td>
+          <td style="text-align:right"><strong>${escapeHtml(p.name)}</strong><div class="small">${escapeHtml(p.desc||'')}</div></td>
+          <td class="small">${escapeHtml(p.unit)}</td>
+          <td><span class="badge green">${p.stock}</span></td>
+          <td><span class="badge orange">${p.reorder}</span></td>
+          <td class="small">${p.added}</td>
+          <td>${Number(p.cost).toFixed(2)}</td>
+          <td>${Number(p.sell).toFixed(2)}</td>
+          <td>
+            <button class="icon-btn" title="تعديل"><i class="fa-solid fa-edit"></i></button>
+            <button class="icon-btn" title="عرض الدفعات" onclick="openBatches(${p.id}, '${escapeJs(p.name)}')"><i class="fa-solid fa-layer-group"></i></button>
+            <button class="icon-btn" title="إضافة دفعة" onclick="openBatches(${p.id}, '${escapeJs(p.name)}', true)"><i class="fa-solid fa-truck-loading"></i></button>
+            <button class="icon-btn" title="حذف" onclick="onDelete(${p.id})"><i class="fa-solid fa-trash"></i></button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      shownCount.textContent = list.length;
+      inventoryValue.textContent = formatCurrency(invVal) + ' ج';
+    }
+
+    // utils
+    function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escapeJs(s){ return String(s).replace(/'/g,"\\'").replace(/\"/g,'\\"'); }
+    function formatCurrency(n){ return Number(n).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+    // initial render
+    renderProducts(products);
+
+    // search with debounce
+    const qInput = document.getElementById('q');
+    let t;
+    qInput.addEventListener('input', ()=>{ clearTimeout(t); t = setTimeout(()=>{ doSearch(qInput.value); }, 450); });
+    document.getElementById('clearSearch').addEventListener('click', ()=>{ qInput.value=''; doSearch(''); });
+
+    function doSearch(q){
+      const v = (q||'').trim().toLowerCase();
+      if (!v) { renderProducts(products); return; }
+      const res = products.filter(p => (p.name + ' ' + p.code).toLowerCase().includes(v));
+      renderProducts(res);
+    }
+
+    // modal functions
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalSubtitle = document.getElementById('modalSubtitle');
+    const batchesArea = document.getElementById('batchesArea');
+    let currentProductId = null;
+    let openAddImmediately = false;
+
+    function openBatches(productId, productName, addImmediately=false){
+      currentProductId = productId;
+      openAddImmediately = !!addImmediately;
+      modalTitle.textContent = `دفعات: ${productName}`;
+      modalSubtitle.textContent = 'تفاصيل الدفعات المتاحة (أقدم دفعة أولاً)';
+      batchesArea.innerHTML = '<div class="small">جاري التحميل...</div>';
+      modalBackdrop.style.display = 'flex';
+      // simulate fetch
+      setTimeout(()=>{ renderBatches(productId); if(openAddImmediately){ document.getElementById('batch_qty').focus(); } }, 300);
+    }
+
+    function closeModal(){ modalBackdrop.style.display = 'none'; document.getElementById('addBatchForm').reset(); }
+
+    function renderBatches(productId){
+      const list = batches[productId] || [];
+      if (!list.length) {
+        batchesArea.innerHTML = '<div class="small">لا توجد دفعات لهذا المنتج.</div>';
+        return;
+      }
+      let html = `<div class="small">الرصيد المتاح: <strong>${list.reduce((s,b)=>s+b.remaining,0)}</strong></div>`;
+      html += `<table style="width:100%;margin-top:8px;border-collapse:collapse"><thead><tr style="color:var(--muted)"><th>الدفعة</th><th>الكمية</th><th>المتبقي</th><th>سعر الشراء</th><th>تاريخ الشراء</th><th>انتهاء</th></tr></thead><tbody>`;
+      list.forEach(b=>{
+        html += `<tr style="text-align:center"><td>${b.id}</td><td>${b.qty}</td><td>${b.remaining}</td><td>${Number(b.unit_cost).toFixed(2)}</td><td>${b.purchase_date||''}</td><td>${b.expiry||'-'}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+      batchesArea.innerHTML = html;
+    }
+
+    // add batch handling (simulated)
+    document.getElementById('addBatchForm').addEventListener('submit', function(e){
+      e.preventDefault();
+      const q = Number(document.getElementById('batch_qty').value);
+      const uc = Number(document.getElementById('batch_unit_cost').value);
+      const dt = document.getElementById('batch_date').value || new Date().toISOString().slice(0,10);
+      const exp = document.getElementById('batch_expiry').value || null;
+      const sup = document.getElementById('batch_supplier').value || null;
+      const notes = document.getElementById('batch_notes').value || '';
+
+      if (!currentProductId) { alert('خطأ: لا يوجد منتج محدد'); return; }
+      if (!q || q <= 0) { alert('الرجاء إدخال كمية صحيحة'); return; }
+      if (isNaN(uc) || uc < 0) { alert('سعر شراء غير صحيح'); return; }
+
+      // simulate server insert: create new batch id
+      const newId = Math.floor(Math.random()*900)+1000;
+      const newBatch = {id:newId, qty:q, remaining:q, unit_cost:uc, purchase_date:dt, expiry:exp, notes:notes};
+      if (!batches[currentProductId]) batches[currentProductId] = [];
+      batches[currentProductId].push(newBatch);
+
+      // update product stock summary
+      const prod = products.find(p=>p.id===currentProductId);
+      if (prod) prod.stock = (batches[currentProductId].reduce((s,b)=>s+b.remaining,0));
+
+      renderProducts(products);
+      renderBatches(currentProductId);
+      alert('تم إضافة الدفعة بنجاح (تصوري)');
+      document.getElementById('addBatchForm').reset();
+    });
+
+    function onDelete(id){
+      if (!confirm('هل أنت متأكد من حذف هذا المنتج؟ هذا الإجراء لا يمكن التراجع عنه.')) return;
+      // in real app: call API -> then re-render
+      products = products.filter(p=>p.id !== id);
+      delete batches[id];
+      renderProducts(products);
+    }
+
+    // Add Product modal (simple)
+    const addProductModalBackdrop = document.getElementById('addProductModalBackdrop');
+    document.getElementById('addProductBtn').addEventListener('click', ()=>{ addProductModalBackdrop.style.display='flex'; });
+
+    function closeAddProduct(){ addProductModalBackdrop.style.display='none'; document.getElementById('addProductForm').reset(); }
+
+    document.getElementById('addProductForm').addEventListener('submit', function(e){
+      e.preventDefault();
+      const code = document.getElementById('np_code').value.trim();
+      const name = document.getElementById('np_name').value.trim();
+      const unit = document.getElementById('np_unit').value.trim();
+      const cost = Number(document.getElementById('np_cost').value) || 0;
+      const sell = Number(document.getElementById('np_sell').value) || 0;
+      const reorder = Number(document.getElementById('np_reorder').value) || 0;
+      const desc = document.getElementById('np_desc').value || '';
+
+      if (!code || !name || !unit) { alert('الرجاء ملء الحقول الأساسية'); return; }
+
+      // simulate insert
+      const newId = (products.length?Math.max(...products.map(p=>p.id))+1:1);
+      const newProd = {id:newId, code:code, name:name, unit:unit, stock:0, reorder:reorder, added:new Date().toISOString().slice(0,10), cost:cost, sell:sell, desc:desc};
+      products.unshift(newProd); // add to beginning
+      renderProducts(products);
+      closeAddProduct();
+      alert('تم إضافة المنتج (تصوري). يمكنك الآن إضافة دفعات له من زر "إضافة دفعة".');
+    });
+
+    // helper: initial render on load
+    document.addEventListener('DOMContentLoaded', ()=>{ renderProducts(products); });
+
+    // export button (demo)
+    document.getElementById('exportBtn').addEventListener('click', ()=>{ alert('تصدير (تصوري) — ربط مع API للتصدير CSV/Excel'); });
+
+  </script>
+
+</body>
+</html>

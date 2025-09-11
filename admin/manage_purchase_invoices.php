@@ -4,7 +4,6 @@ $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
 
-
 $message = "";
 $selected_supplier_id = "";
 $selected_status = "";
@@ -15,7 +14,7 @@ $suppliers_list = [];
 
 $status_labels = [
     'pending' => 'قيد الانتظار',
-    'partial_received' => 'تم الاستلام جزئياً',
+    // 'partial_received' => 'تم الاستلام جزئياً',
     'fully_received' => 'تم الاستلام بالكامل',
     'cancelled' => 'ملغاة'
 ];
@@ -32,25 +31,78 @@ if (empty($_SESSION['csrf_token'])) {
 }
 $csrf_token = $_SESSION['csrf_token'];
 
+// روابط مفيدة
+$view_purchase_invoice_link = BASE_URL . "admin/view_purchase_invoice.php";
+$edit_purchase_invoice_link = BASE_URL . "admin/edit_purchase_invoice.php";
+$current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
+
 // --- معالجة الحذف ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_purchase_invoice'])) {
     if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
         $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
     } else {
         $invoice_id_to_delete = intval($_POST['purchase_invoice_id_to_delete']);
+        // لحذف البنود مرتبطه وهنا نفترض ON DELETE CASCADE أو عملية منفصلة حسب تصميمك
         $sql_delete = "DELETE FROM purchase_invoices WHERE id = ?";
         if ($stmt_delete = $conn->prepare($sql_delete)) {
             $stmt_delete->bind_param("i", $invoice_id_to_delete);
             if ($stmt_delete->execute()) {
                 $_SESSION['message'] = ($stmt_delete->affected_rows > 0) ? "<div class='alert alert-success'>تم حذف فاتورة المشتريات وبنودها بنجاح.</div>" : "<div class='alert alert-warning'>لم يتم العثور على الفاتورة أو لم يتم حذفها.</div>";
             } else {
-                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف الفاتورة: " . $stmt_delete->error . "</div>";
+                error_log("Delete purchase invoice error: " . $stmt_delete->error);
+                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف الفاتورة. الرجاء المحاولة لاحقاً.</div>";
             }
             $stmt_delete->close();
         } else {
-            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف: " . $conn->error . "</div>";
+            error_log("Prepare delete purchase invoice failed: " . $conn->error);
+            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف. الرجاء المحاولة لاحقاً.</div>";
         }
     }
+    // إعادة توجيه مع الحفاظ على الفلاتر
+    $query_params = [];
+    if (!empty($_POST['supplier_filter_val'])) $query_params['supplier_filter_val'] = $_POST['supplier_filter_val'];
+    if (!empty($_POST['status_filter_val'])) $query_params['status_filter_val'] = $_POST['status_filter_val'];
+    header("Location: manage_purchase_invoices.php" . (!empty($query_params) ? "?" . http_build_query($query_params) : ""));
+    exit;
+}
+
+// --- معالجة تغيير حالة الفاتورة (تعيين pending / partial_received / fully_received / cancelled) ---
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['change_invoice_status'])) {
+    // تحقق CSRF
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
+    } else {
+        $invoice_id = intval($_POST['purchase_invoice_id'] ?? 0);
+        $new_status = trim($_POST['new_status'] ?? '');
+
+        // تحقق من القيم المسموح بها
+        $allowed_statuses = ['pending','partial_received','fully_received','cancelled'];
+        if ($invoice_id <= 0 || !in_array($new_status, $allowed_statuses, true)) {
+            $_SESSION['message'] = "<div class='alert alert-danger'>بيانات غير صحيحة لتغيير الحالة.</div>";
+        } else {
+            $sql_update_status = "UPDATE purchase_invoices SET status = ? WHERE id = ? LIMIT 1";
+            if ($stmt_up = $conn->prepare($sql_update_status)) {
+                $stmt_up->bind_param("si", $new_status, $invoice_id);
+                if ($stmt_up->execute()) {
+                    if ($stmt_up->affected_rows > 0) {
+                        $label = $status_labels[$new_status] ?? $new_status;
+                        $_SESSION['message'] = "<div class='alert alert-success'>تم تغيير حالة الفاتورة إلى: <strong>".htmlspecialchars($label)."</strong>.</div>";
+                    } else {
+                        $_SESSION['message'] = "<div class='alert alert-warning'>لم يتم تحديث الفاتورة (ربما لم يتغير شيء).</div>";
+                    }
+                } else {
+                    error_log("Update invoice status error: " . $stmt_up->error);
+                    $_SESSION['message'] = "<div class='alert alert-danger'>فشل تحديث حالة الفاتورة. الرجاء المحاولة لاحقاً.</div>";
+                }
+                $stmt_up->close();
+            } else {
+                error_log("Prepare update invoice status failed: " . $conn->error);
+                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ داخلي. الرجاء المحاولة لاحقاً.</div>";
+            }
+        }
+    }
+
+    // إعادة توجيه مع المحافظة على الفلاتر
     $query_params = [];
     if (!empty($_POST['supplier_filter_val'])) $query_params['supplier_filter_val'] = $_POST['supplier_filter_val'];
     if (!empty($_POST['status_filter_val'])) $query_params['status_filter_val'] = $_POST['status_filter_val'];
@@ -119,11 +171,11 @@ if ($stmt_select = $conn->prepare($sql_select_invoices)) {
     if ($stmt_select->execute()) {
         $result_invoices = $stmt_select->get_result();
     } else {
-        $message = "<div class='alert alert-danger'>حدث خطأ أثناء جلب فواتير المشتريات: " . $stmt_select->error . "</div>";
+        $message = "<div class='alert alert-danger'>حدث خطأ أثناء جلب فواتير المشتريات: " . htmlspecialchars($stmt_select->error) . "</div>";
     }
     $stmt_select->close();
 } else {
-    $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام جلب فواتير المشتريات: " . $conn->error . "</div>";
+    $message = "<div class='alert alert-danger'>خطأ في تحضير استعلام جلب فواتير المشتريات: " . htmlspecialchars($conn->error) . "</div>";
 }
 
 // --- حساب إجمالي الفواتير المعروضة حالياً مباشرة من قاعدة البيانات ---
@@ -158,15 +210,10 @@ if ($stmt_total = $conn->prepare($sql_total_displayed)) {
     $stmt_total->close();
 }
 
-$view_purchase_invoice_link = BASE_URL . "admin/view_purchase_invoice.php";
-$edit_purchase_invoice_link = BASE_URL . "admin/edit_purchase_invoice.php";
-$current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
-
 require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/sidebar.php';
 
 ?>
-
 
 <div class="container mt-5 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -227,7 +274,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                 if(!empty($selected_supplier_id) && !empty($suppliers_list)) {
                     foreach($suppliers_list as $s_item) { if($s_item['id'] == $selected_supplier_id) {$filter_text[] = "المورد: " . htmlspecialchars($s_item['name']); break;}}
                 }
-                if(!empty($selected_status)) {$filter_text[] = "الحالة: " . htmlspecialchars($selected_status);}
+                if(!empty($selected_status)) {$filter_text[] = "الحالة: " . htmlspecialchars($status_labels[$selected_status] ?? $selected_status);}
                 if(!empty($filter_text)) { echo " (" . implode("، ", $filter_text) . ")";}
             ?>
         </div>
@@ -244,7 +291,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                             <th class="text-end">الإجمالي</th>
                             <th class="d-none d-md-table-cell">أنشئت بواسطة</th>
                             <th class="d-none d-md-table-cell">تاريخ الإنشاء</th>
-                            <th class="text-center" style="min-width: 210px;">إجراءات</th>
+                            <th class="text-center" style="min-width: 260px;">إجراءات</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -259,15 +306,17 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                     <td><?php echo htmlspecialchars($invoice["supplier_name"]); ?></td>
                                     <td class="d-none d-md-table-cell"><?php echo htmlspecialchars($invoice["supplier_invoice_number"] ?: '-'); ?></td>
                                     <td><?php echo date('Y-m-d', strtotime($invoice["purchase_date"])); ?></td>
-                                    <td class="d-none d-md-table-cell"><span class="badge bg-<?php
-                                        switch($invoice['status']){
-                                            case 'pending': echo 'warning text-dark'; break;
-                                            case 'partial_received': echo 'info'; break;
-                                            case 'fully_received': echo 'success'; break;
-                                            case 'cancelled': echo 'danger'; break;
-                                            default: echo 'secondary';
-                                        }
-                                    ?>"><?php echo $status_labels[$invoice['status']] ?? $invoice['status']; ?></span></td>
+                                    <td class="d-none d-md-table-cell">
+                                        <span class="badge bg-<?php
+                                            switch($invoice['status']){
+                                                case 'pending': echo 'warning text-dark'; break;
+                                                case 'partial_received': echo 'info'; break;
+                                                case 'fully_received': echo 'success'; break;
+                                                case 'cancelled': echo 'danger'; break;
+                                                default: echo 'secondary';
+                                            }
+                                        ?>"><?php echo $status_labels[$invoice['status']] ?? htmlspecialchars($invoice['status']); ?></span>
+                                    </td>
                                     <td class="text-end fw-bold"><?php echo number_format($current_invoice_total_for_row, 2); ?> ج.م</td>
                                     <td class="d-none d-md-table-cell"><?php echo htmlspecialchars($invoice["creator_name"] ?? 'غير محدد'); ?></td>
                                     <td class="d-none d-md-table-cell"><?php echo date('Y-m-d H:i A', strtotime($invoice["created_at"])); ?></td>
@@ -275,9 +324,34 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                         <a href="<?php echo $view_purchase_invoice_link; ?>?id=<?php echo $invoice["id"]; ?>" class="btn btn-info btn-sm" title="عرض وإدارة البنود">
                                             <i class="fas fa-eye"></i> <span class="d-none d-md-inline">البنود</span>
                                         </a>
+
                                         <a href="<?php echo $edit_purchase_invoice_link; ?>?id=<?php echo $invoice["id"]; ?>" class="btn btn-warning btn-sm ms-1" title="تعديل بيانات الفاتورة الأساسية">
                                             <i class="fas fa-edit"></i> <span class="d-none d-md-inline">تعديل</span>
                                         </a>
+
+                                        <!-- أزرار تغيير الحالة السريعة -->
+                                        <form method="post" action="<?php echo $current_page_url_for_forms; ?>" class="d-inline ms-1">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                            <input type="hidden" name="purchase_invoice_id" value="<?php echo $invoice['id']; ?>">
+                                            <input type="hidden" name="new_status" value="fully_received">
+                                            <input type="hidden" name="supplier_filter_val" value="<?php echo htmlspecialchars($selected_supplier_id); ?>">
+                                            <input type="hidden" name="status_filter_val" value="<?php echo htmlspecialchars($selected_status); ?>">
+                                            <button type="submit" name="change_invoice_status" class="btn btn-sm btn-success" title="تعيين: تم الاستلام بالكامل">
+                                                <i class="fas fa-check-double"></i> <span class="d-none d-md-inline">تم الاستلام</span>
+                                            </button>
+                                        </form>
+
+
+                                        <form method="post" action="<?php echo $current_page_url_for_forms; ?>" class="d-inline ms-1">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                            <input type="hidden" name="purchase_invoice_id" value="<?php echo $invoice['id']; ?>">
+                                            <input type="hidden" name="new_status" value="pending">
+                                            <input type="hidden" name="supplier_filter_val" value="<?php echo htmlspecialchars($selected_supplier_id); ?>">
+                                            <input type="hidden" name="status_filter_val" value="<?php echo htmlspecialchars($selected_status); ?>">
+                                            <button type="submit" name="change_invoice_status" class="btn btn-sm btn-outline-secondary" title="إعادة إلى: قيد الانتظار">
+                                                <i class="fas fa-undo"></i> <span class="d-none d-md-inline">قيد الانتظار</span>
+                                            </button>
+                                        </form>
                                     </td>
                                 </tr>
                         <?php

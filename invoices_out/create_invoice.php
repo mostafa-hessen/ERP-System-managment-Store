@@ -117,7 +117,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'search_customers') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_customer') {
     header('Content-Type: application/json; charset=utf-8');
     if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) { echo json_encode(['ok'=>false,'msg'=>'CSRF error']); exit; }
-    $name = trim($_POST['name'] ?? ''); $mobile = trim($_POST['mobile'] ?? ''); $city = trim($_POST['city'] ?? ''); $address = trim($_POST['address'] ?? '');
+    $name = trim($_POST['name'] ?? ''); 
+    $mobile = trim($_POST['mobile'] ?? ''); 
+    $city = trim($_POST['city'] ?? ''); 
+    $address = trim($_POST['address'] ?? '');
+    $notes = trim($_POST['notes'] ?? ''); // <-- جديد
+
     if ($name === '') { echo json_encode(['ok'=>false,'msg'=>'الاسم مطلوب']); exit; }
     if ($mobile !== '' && !preg_match('/^[0-9]{11}$/', $mobile)) { echo json_encode(['ok'=>false,'msg'=>'الموبايل يجب أن يتكون من 11 رقمًا']); exit; }
     if ($mobile !== '') {
@@ -126,16 +131,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt->close();
     }
     $created_by = $_SESSION['id'] ?? 0;
-    // <-- FIX: correct bind types: 4 strings then integer -> "ssssi"
-    $stmt = $conn->prepare("INSERT INTO customers (name,mobile,city,address,created_by,created_at) VALUES (?, ?, ?, ?, ?, NOW())");
-    if (!$stmt) { echo json_encode(['ok'=>false,'msg'=>'DB prepare error']); exit; }
-    $stmt->bind_param("ssssi", $name, $mobile, $city, $address, $created_by);
+
+    // INSERT مع حقل notes
+    $stmt = $conn->prepare("INSERT INTO customers (name,mobile,city,address,notes,created_by,created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+    if (!$stmt) { echo json_encode(['ok'=>false,'msg'=>'DB prepare error: '.$conn->error]); exit; }
+    // types: name,mobile,city,address,notes,created_by => ssss si  => "sssssi"
+    $stmt->bind_param("sssssi", $name, $mobile, $city, $address, $notes, $created_by);
     if (!$stmt->execute()) { echo json_encode(['ok'=>false,'msg'=>'فشل الإنشاء: '.$stmt->error]); $stmt->close(); exit; }
     $new_id = $stmt->insert_id; $stmt->close();
-    $stmt2 = $conn->prepare("SELECT id,name,mobile,city,address FROM customers WHERE id = ? LIMIT 1"); $stmt2->bind_param("i",$new_id); $stmt2->execute(); $row = $stmt2->get_result()->fetch_assoc(); $stmt2->close();
+
+    // جِب السجل المحدث مع الحقول (بما فيها notes)
+    $stmt2 = $conn->prepare("SELECT id,name,mobile,city,address,notes FROM customers WHERE id = ? LIMIT 1");
+    $stmt2->bind_param("i",$new_id); $stmt2->execute(); $row = $stmt2->get_result()->fetch_assoc(); $stmt2->close();
+
     echo json_encode(['ok'=>true,'customer'=>$row], JSON_UNESCAPED_UNICODE);
     exit;
 }
+
 
 // Load products and next invoice id
 $products_list = [];
@@ -540,6 +552,8 @@ require_once BASE_DIR . 'partials/sidebar.php';
       <input id="new_mobile" placeholder="رقم الموبايل (11 رقم)" class="note-box">
       <input id="new_city" placeholder="المدينة" class="note-box">
       <input id="new_address" placeholder="العنوان" class="note-box">
+        <textarea id="new_notes" placeholder="ملاحظات عن العميل (اختياري)" class="note-box" rows="3"></textarea>
+
       <div class="actions">
         <button id="closeAddCust" type="button" class="btn ghost">إلغاء</button>
         <button id="submitAddCust" type="button" class="btn primary">حفظ وإختيار</button>
@@ -801,10 +815,12 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 
     submitAddBtn.addEventListener('click', async function(){
+
       const name    = document.getElementById('new_name').value.trim();
       const mobile  = document.getElementById('new_mobile').value.trim();
       const city    = document.getElementById('new_city').value.trim();
       const address = document.getElementById('new_address').value.trim();
+      const notes   = document.getElementById('new_notes') ? document.getElementById('new_notes').value.trim() : '';
       const msg     = document.getElementById('addCustMsg');
       msg.innerHTML = '';
 
@@ -813,13 +829,15 @@ document.addEventListener('DOMContentLoaded', function(){
       if (!city) { msg.innerHTML = '<div style="color:#a00">❌ المدينة مطلوبة</div>'; return; }
       if (!address || address.length < 5) { msg.innerHTML = '<div style="color:#a00">❌ العنوان يجب أن يكون أوضح (5 حروف على الأقل)</div>'; return; }
 
-      const form = new FormData();
-      form.append('action','create_customer');
-      form.append('csrf_token', csrf);
-      form.append('name', name);
-      form.append('mobile', mobile);
-      form.append('city', city);
-      form.append('address', address);
+  const form = new FormData();
+form.append('action','create_customer');
+form.append('csrf_token', csrf);
+form.append('name', name);
+form.append('mobile', mobile);
+form.append('city', city);
+form.append('address', address);
+form.append('notes', notes); // <-- جديد
+
 
       try {
         const res = await fetch(location.pathname, { method:'POST', body: form });

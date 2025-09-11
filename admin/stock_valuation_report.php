@@ -131,7 +131,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                             <th>كود المنتج</th>
                             <th>اسم المنتج</th>
                             <th>وحدة القياس</th>
-                            <th class="text-center">الرصيد الحالي</th>
+                            <th class="text-center">الكميه الموجوده </th>
                             <th class="text-end">سعر التكلفة المستخدم</th>
                             <th class="text-end">القيمة الإجمالية للمخزون</th>
                         </tr>

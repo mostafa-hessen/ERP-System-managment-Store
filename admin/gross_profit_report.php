@@ -494,7 +494,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 return;
             }
             // Build table
-            let html = '<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:110px">سعر البيع</th><th style="width:110px">إجمالي البيع</th><th style="width:110px">سعر التكلفة</th><th style="width:110px">إجمالي التكلفة</th><th style="width:110px">صافي الربح</th></tr></thead><tbody>';
+            let html = '<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:110px">سعر التكلفة</th><th style="width:110px">إجمالي التكلفة</th><th style="width:110px">سعر البيع</th><th style="width:110px">إجمالي البيع</th><th style="width:110px">صافي الربح</th></tr></thead><tbody>';
             let sumSell = 0, sumCost = 0, sumProfit = 0;
             for (const it of items) {
                 const qty = parseFloat(it.quantity || 0);
@@ -507,15 +507,18 @@ document.addEventListener('DOMContentLoaded', function(){
                 html += `<tr>
                     <td>${escapeHtml(it.product_name || ('#'+it.product_id))}</td>
                     <td class="text-end">${qty.toFixed(2)}</td>
-                    <td class="text-end">${selling.toFixed(2)}</td>
-                    <td class="text-end">${total.toFixed(2)}</td>
+                
                     <td class="text-end">${costu.toFixed(2)}</td>
                     <td class="text-end">${lineCogs.toFixed(2)}</td>
+                        <td class="text-end">${selling.toFixed(2)}</td>
+                    <td class="text-end">${total.toFixed(2)}</td>
                     <td class="text-end">${lineProfit.toFixed(2)}</td>
                 </tr>`;
             }
             html += `</tbody><tfoot class="table-light"><tr>
-                <th>المجموع</th><th></th><th></th><th class="text-end">${sumSell.toFixed(2)}</th><th></th><th class="text-end">${sumCost.toFixed(2)}</th><th class="text-end">${sumProfit.toFixed(2)}</th>
+                <th>المجموع</th><th></th><th>
+                </th><th class="text-end">${sumCost.toFixed(2)}</th>
+                <th></th><th class="text-end">${sumSell.toFixed(2)}</th><th class="text-end">${sumProfit.toFixed(2)}</th>
             </tr></tfoot></table></div>`;
             modalContent.innerHTML = html;
         } catch (err) {

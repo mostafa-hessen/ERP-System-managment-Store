@@ -75,7 +75,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_sales_invoice']
     // سنفترض وجود صفحة عامة لإدارة فواتير الصادر أو العودة لصفحة كانت تعرض الفاتورة
     // إذا كنت تحذف من pending_invoices.php أو delivered_invoices.php، يمكنك تمرير متغير لتحديد العودة.
     // للتبسيط الآن، سنوجه لـ pending_invoices.php
-    header("Location: " . BASE_URL . "admin/pending_invoices.php"); // أو delivered_invoices.php
+  // نهاية المعالجة — بدلاً من توجيه ثابت، نقرر الوجهة بناءً على input أو referer
+$allowed = ['pending','delivered']; // الصفحات المسموح الرجوع إليها
+$redirect_key = 'pending'; // افتراضي
+
+// 1) إذا أرسلت الصفحة نفسها متغير redirect_to (مفضّل ـ ضع هذا الحقل في الفورم)
+if (isset($_POST['redirect_to']) && in_array($_POST['redirect_to'], $allowed, true)) {
+    $redirect_key = $_POST['redirect_to'];
+} else {
+    // 2) محاولة ذكية: استخرج من HTTP_REFERER إذا كان من نفس الموقع ويحتوي اسم الصفحة
+    if (!empty($_SERVER['HTTP_REFERER']) && strpos($_SERVER['HTTP_REFERER'], BASE_URL) === 0) {
+        $ref = $_SERVER['HTTP_REFERER'];
+        if (strpos($ref, 'delivered_invoices.php') !== false) $redirect_key = 'delivered';
+        elseif (strpos($ref, 'pending_invoices.php') !== false) $redirect_key = 'pending';
+    }
+}
+
+// أخيراً وجه للصفحة المختارة (آمن داخل BASE_URL)
+header("Location: " . BASE_URL . "admin/{$redirect_key}_invoices.php");
+exit;
+
     exit;
 } else {
     $_SESSION['message'] = "<div class='alert alert-warning'>طلب غير صحيح.</div>";

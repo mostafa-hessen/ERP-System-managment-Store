@@ -3,7 +3,6 @@ $page_title = "إضافة مورد جديد";
 $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
-require_once BASE_DIR . 'partials/sidebar.php';
 
 
 // تعريف المتغيرات

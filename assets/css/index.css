@@ -446,6 +446,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   [data-app] .card, [data-app] .card-body, [data-app] .card-header {
     background:#fff!important; border:1px solid #ccc!important; box-shadow:none!important;
   }
+
+  .no-print{
+    display: none !important;
+  }
 }
 
 

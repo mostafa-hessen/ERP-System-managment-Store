@@ -3,7 +3,6 @@ $page_title = "إدارة الموردين";
 $class_dashboard = "active";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
-require_once BASE_DIR . 'partials/sidebar.php';
 
 $message = "";
 $search_term = "";
@@ -22,26 +21,82 @@ if (empty($_SESSION['csrf_token'])) {
 $csrf_token = $_SESSION['csrf_token'];
 
 // --- معالجة الحذف ---
+// --- معالجة الحذف (محسّنة لرسائل أوضح) ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_supplier'])) {
+    // تحقق CSRF
     if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
         $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
-    } else {
-        $supplier_id_to_delete = intval($_POST['supplier_id_to_delete']);
-        // لا تنسَ التحقق من الارتباطات المستقبلية قبل الحذف الفعلي
-        $sql_delete = "DELETE FROM suppliers WHERE id = ?";
-        if ($stmt_delete = $conn->prepare($sql_delete)) {
-            $stmt_delete->bind_param("i", $supplier_id_to_delete);
-            if ($stmt_delete->execute()) {
-                $_SESSION['message'] = ($stmt_delete->affected_rows > 0) ? "<div class='alert alert-success'>تم حذف المورد بنجاح.</div>" : "<div class='alert alert-warning'>لم يتم العثور على المورد أو لم يتم حذفه.</div>";
-            } else {
-                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف المورد: " . $stmt_delete->error . ". قد يكون مرتبطاً بسجلات أخرى.</div>";
-            }
-            $stmt_delete->close();
-        } else {
-            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف: " . $conn->error . "</div>";
-        }
+        header("Location: manage_suppliers.php");
+        exit;
     }
-    header("Location: manage_suppliers.php" . (!empty($search_term) ? "?search_term_val=" . urlencode($search_term) : "") ); // PRG مع الحفاظ على البحث
+
+    $supplier_id_to_delete = intval($_POST['supplier_id_to_delete'] ?? 0);
+    $search_term_from_form = isset($_POST['search_term_val']) ? trim($_POST['search_term_val']) : '';
+
+    if ($supplier_id_to_delete <= 0) {
+        $_SESSION['message'] = "<div class='alert alert-danger'>المعرّف غير صالح.</div>";
+        header("Location: manage_suppliers.php" . (!empty($search_term_from_form) ? "?search_term_val=" . urlencode($search_term_from_form) : ""));
+        exit;
+    }
+
+    // تنفيذ حذف (DELETE) محاولياً
+    $sql_delete = "DELETE FROM suppliers WHERE id = ? LIMIT 1";
+    if ($stmt_delete = $conn->prepare($sql_delete)) {
+        $stmt_delete->bind_param("i", $supplier_id_to_delete);
+        if ($stmt_delete->execute()) {
+            if ($stmt_delete->affected_rows > 0) {
+                $_SESSION['message'] = "<div class='alert alert-success'>تم حذف المورد بنجاح.</div>";
+            } else {
+                $_SESSION['message'] = "<div class='alert alert-warning'>لم يتم العثور على المورد أو لم يتم حذفه.</div>";
+            }
+        } else {
+            // فشل التنفيذ — نفحص إن كان بسبب قيد المفتاح الخارجي (MySQL errno 1451)
+            $mysql_errno = $conn->errno; // أو $stmt_delete->errno
+            // سجل الخطأ التقني في لوج السيرفر دائماً
+            error_log("Delete supplier error (errno {$mysql_errno}): " . $stmt_delete->error);
+
+            if ($mysql_errno == 1451) {
+                // نحسب عدد الفواتير المرتبطة لعرض رسالة أكثر وضوحاً
+                $linked_count = 0;
+                $sql_count = "SELECT COUNT(*) AS cnt FROM purchase_invoices WHERE supplier_id = ?";
+                if ($chk = $conn->prepare($sql_count)) {
+                    $chk->bind_param("i", $supplier_id_to_delete);
+                    $chk->execute();
+                    $res = $chk->get_result();
+                    if ($res && $row = $res->fetch_assoc()) {
+                        $linked_count = intval($row['cnt']);
+                    }
+                    $chk->close();
+                }
+
+                // رسالة صديقة للمستخدم مع اقتراحات (عرض الفواتير أو التعطيل بدلاً من الحذف)
+                $view_invoices_link = BASE_URL . "admin/manage_purchase_invoices.php";
+                $manage_suppliers_link = "manage_suppliers.php" . (!empty($search_term_from_form) ? "?search_term_val=" . urlencode($search_term_from_form) : "");
+
+                $_SESSION['message'] = "
+                    <div class='alert alert-warning'>
+                        <strong>لا يمكن حذف المورد</strong> لأن هناك <strong>{$linked_count}</strong> فاتورة/فواتير مرتبطة به.
+                        <br>السبب التقني: سجلات في جدول الفواتير تعتمد على هذا المورد لذا لا يمكن حذف السجل الأب.
+                        <hr style='margin:6px 0;'/>
+                        ما يمكنك فعله الآن:
+                        <ul style='margin:8px 0 0 18px; padding:0;'>
+                            <li>عرض الفواتير المرتبطة أولاً للتأكد — <a href='{$view_invoices_link}'>عرض الفواتير ({$linked_count})</a>.</li>
+                        </ul>
+                    </div>
+                ";
+            } else {
+                // رسالة عامة آمنة للمستخدم، والسجل يحتوي التفاصيل
+                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف المورد. تم تسجيل الخطأ لدى النظام وسيتم مراجعته.</div>";
+            }
+        }
+        $stmt_delete->close();
+    } else {
+        // فشل في تحضير الاستعلام
+        error_log("Prepare delete supplier failed: " . $conn->error);
+        $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ داخلي. الرجاء المحاولة لاحقاً.</div>";
+    }
+
+    header("Location: {$manage_suppliers_link}");
     exit;
 }
 
@@ -86,13 +141,18 @@ require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/navbar.php';
 $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]) . (!empty($search_term) ? "?search_term_val=" . urlencode($search_term) : "");
 $create_purchase_invoice_link = BASE_URL . "admin/create_purchase_invoice.php"; // افترض أن الصفحة ستكون هنا
+require_once BASE_DIR . 'partials/sidebar.php';
+
 ?>
 
 <div class="container mt-5 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="fas fa-people-carry"></i> إدارة الموردين</h1>
-        <a href="<?php echo BASE_URL; ?>admin/add_supplier.php" class="btn btn-success"><i class="fas fa-plus-circle"></i> إضافة مورد جديد</a>
-    </div>
+<div>
+            <a href="<?php echo BASE_URL; ?>user/welcome.php" class="btn btn-outline-secondary me-2"><i class="fas fa-arrow-left"></i> رجوع</a>
+            <a href="<?php echo BASE_URL; ?>admin/manage_purchase_invoices.php" class="btn btn-outline-primary me-2"><i class="fas fa-file-invoice"></i> فواتير وارد</a>
+            <a href="<?php echo BASE_URL; ?>admin/add_supplier.php" class="btn btn-success"><i class="fas fa-plus-circle"></i> إضافة مورد جديد</a>
+        </div>    </div>
 
     <?php echo $message; ?>
 
