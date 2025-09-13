@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>نظام إدارة المخزون — UI (HTML/CSS/JS فقط)</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#041827;
+      --card:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));
+      --muted:#9fb3c6;
+      --accent1:#06b6d4;
+      --accent2:#7c3aed;
+      --success:#10b981;
+      --danger:#ef4444;
+      --glass: rgba(255,255,255,0.03);
+      --radius:12px;
+      font-family: "Noto Naskh Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;padding:28px;background:linear-gradient(180deg,#031426 0%,#041726 70%);color:#e7f2fb; -webkit-font-smoothing:antialiased}
+    .wrap{max-width:1200px;margin:0 auto}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent1),var(--accent2));display:flex;align-items:center;justify-content:center;color:#071423;font-weight:700}
+    h1{margin:0;font-size:18px}
+    .muted{color:var(--muted);font-size:13px}
+    .controls{display:flex;gap:10px;align-items:center}
+    .search{display:flex;gap:8px;padding:8px;border-radius:10px;background:var(--glass)}
+    .search input{background:transparent;border:none;color:inherit;padding:6px;width:220px}
+    button.btn{border:0;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:700}
+    button.primary{background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#071423}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+    .card{background:var(--card);padding:12px;border-radius:12px;box-shadow:0 20px 40px rgba(2,6,23,0.6)}
+    .layout{display:grid;grid-template-columns:360px 1fr;gap:16px}
+    @media (max-width:1000px){ .layout{grid-template-columns:1fr} .search input{width:120px} }
+    .smallCard{padding:12px;border-radius:10px;background:rgba(255,255,255,0.02)}
+    table{width:100%;border-collapse:collapse}
+    thead th{padding:10px;background:rgba(255,255,255,0.02);color:var(--muted);font-size:13px}
+    tbody td{padding:10px;border-top:1px solid rgba(255,255,255,0.02);vertical-align:middle;text-align:center}
+    .badge{padding:6px 10px;border-radius:999px;font-size:13px}
+    .badge.green{background:rgba(16,185,129,0.08);color:var(--success)}
+    .badge.orange{background:rgba(245,158,11,0.06);color:#f59e0b}
+    .badge.red{background:rgba(239,68,68,0.06);color:var(--danger)}
+    .actions td{white-space:nowrap}
+    .backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;align-items:center;justify-content:center;z-index:999}
+    .modal{width:920px;max-width:96%;background:linear-gradient(180deg,#071426,#041426);padding:16px;border-radius:12px}
+    .form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+    .form-grid .full{grid-column:1/-1}
+    input,select,textarea{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    .table-scroll{overflow:auto;max-height:460px}
+    .hr{height:1px;background:rgba(255,255,255,0.03);margin:10px 0}
+    .invoice-sim{padding:10px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));}
+    .sim-items table td input{width:80px;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+    .muted2{color:#9fb3c6;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <div class="logo"><i class="fa-solid fa-boxes"></i></div>
+        <div>
+          <h1>نظام إدارة المخزون — (HTML/CSS/JS فقط)</h1>
+          <div class="muted">منتجات · دفعات · FIFO · محاكاة الفاتورة</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="search" title="بحث بالاسم أو الكود">
+          <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+          <input id="searchQ" placeholder="بحث باسم المنتج أو بالكود..." autocomplete="off">
+          <button class="ghost" id="clearSearch" title="مسح"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <button class="primary" id="btnAddProduct"><i class="fa-solid fa-plus"></i>&nbsp;إضافة منتج</button>
+        <button class="ghost" id="btnExport"><i class="fa-solid fa-file-export"></i></button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- Left: KPIs + Invoice sim -->
+      <div>
+        <div class="smallCard card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="muted">إجمالي المنتجات</div>
+              <div style="font-size:20px;font-weight:800" id="kpiProducts">0</div>
+            </div>
+            <div style="text-align:left">
+              <div class="muted">قيمة المخزون</div>
+              <div style="font-size:20px;font-weight:800" id="kpiValue">0 ج</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="smallCard card invoice-sim" style="margin-top:12px">
+          <h3 style="margin:0 0 8px 0">محاكاة الفاتورة</h3>
+          <div class="muted2">ابنِ فاتورة من بنود المخزون — احتسب معاينة FIFO لكل بند</div>
+          <div style="margin-top:8px">
+            <input id="simSearch" placeholder="ابحث لإضافة منتج..." style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)">
+            <div id="simProductHits" style="margin-top:8px;max-height:180px;overflow:auto"></div>
+          </div>
+
+          <div style="margin-top:10px">
+            <label class="muted2">بنود الفاتورة</label>
+            <div class="table-scroll sim-items" style="margin-top:8px">
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr><th>منتج</th><th>كمية</th><th>سعر بيع</th><th>COGS</th><th>إجمالي</th><th></th></tr></thead>
+                <tbody id="simItemsTbody"></tbody>
+              </table>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+              <div class="muted2">إجمالي المبيعات: <strong id="simTotal">0.00</strong> ج</div>
+              <div style="display:flex;gap:8px">
+                <button class="ghost" id="btnSimPreview">معاينة FIFO</button>
+                <button class="primary" id="btnSimSend">تأكيد وإنشاء (محاكاة)</button>
+              </div>
+            </div>
+            <div id="simPreviewArea" style="margin-top:10px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: products table -->
+      <div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div><strong>قائمة المنتجات</strong> <span class="muted">— إدارة، دفعات، بيع</span></div>
+            <div class="muted2">استخدم أزرار كل صف لعرض الدفعات أو إضافة دفعة أو بيع</div>
+          </div>
+
+          <div class="table-scroll">
+            <table aria-label="products-table">
+              <thead>
+                <tr>
+                  <th style="width:40px">#</th>
+                  <th>الكود</th>
+                  <th style="text-align:right">اسم المنتج</th>
+                  <th>الوحدة</th>
+                  <th>الرصيد</th>
+                  <th>حد الطلب</th>
+                  <th>آخر شراء</th>
+                  <th>سعر البيع</th>
+                  <th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="productsTbody"></tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Product Modal -->
+  <div id="productModal" class="backdrop" role="dialog" aria-hidden="true">
+    <div class="modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><h3 id="productModalTitle">إضافة منتج</h3><div class="muted2">حقل السعر المرجعي للعرض فقط — التكلفة الحقيقية من دفعات</div></div>
+        <div><button class="ghost" onclick="closeProductModal()"><i class="fa-solid fa-xmark"></i></button></div>
+      </div>
+
+      <form id="productForm">
+        <div class="form-grid">
+          <div><label>كود المنتج</label><input id="p_code" required></div>
+          <div><label>اسم المنتج</label><input id="p_name" required></div>
+          <div><label>وحدة</label><input id="p_unit" required></div>
+          <div><label>سعر تكلفة مرجعي</label><input id="p_cost" type="number" step="0.01"></div>
+          <div><label>سعر البيع</label><input id="p_sell" type="number" step="0.01" required></div>
+          <div><label>حد إعادة الطلب</label><input id="p_reorder" type="number" step="1"></div>
+          <div class="full"><label>وصف</label><textarea id="p_desc"></textarea></div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+          <button type="button" class="ghost" onclick="closeProductModal()">إلغاء</button>
+          <button type="submit" class="primary" id="productSaveBtn">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Batches Modal -->
+  <div id="batchesModal" class="backdrop" role="dialog" aria-hidden="true">
+    <div class="modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><h3 id="batchesModalTitle">دفعات المنتج</h3><div class="muted2">عرض وإضافة دفعات — لا تنقص دفعة أدت إلى مبيعات دون قيود</div></div>
+        <div><button class="ghost" onclick="closeBatchesModal()"><i class="fa-solid fa-xmark"></i></button></div>
+      </div>
+
+      <div id="batchesBody">
+        <div id="batchesList" style="margin-bottom:12px">تحميل...</div>
+        <div class="hr"></div>
+
+        <form id="batchForm">
+          <div class="form-grid">
+            <div><label>الكمية</label><input id="batch_qty" type="number" step="0.0001" min="0.0001" required></div>
+            <div><label>سعر الشراء للوحدة</label><input id="batch_cost" type="number" step="0.01" required></div>
+            <div><label>تاريخ الاستلام</label><input id="batch_date" type="date"></div>
+            <div><label>تاريخ الإنتهاء (اختياري)</label><input id="batch_expiry" type="date"></div>
+            <div><label>المورد</label><input id="batch_supplier"></div>
+            <div class="full"><label>ملاحظات</label><input id="batch_notes"></div>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+            <button type="button" class="ghost" onclick="closeBatchesModal()">إلغاء</button>
+            <button type="submit" class="primary">إضافة دفعة</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sell Modal -->
+  <div id="sellModal" class="backdrop" role="dialog" aria-hidden="true">
+    <div class="modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><h3 id="sellModalTitle">بيع المنتج</h3><div class="muted2">سيتم استهلاك الدفعات بالأقدم أولاً (FIFO)</div></div>
+        <div><button class="ghost" onclick="closeSellModal()"><i class="fa-solid fa-xmark"></i></button></div>
+      </div>
+
+      <div>
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+          <div style="flex:1"><div class="muted2">المنتج</div><div id="sellProductName" style="font-weight:700"></div></div>
+          <div style="width:160px"><div class="muted2">الرصيد المتاح</div><div id="sellAvailable"></div></div>
+        </div>
+
+        <form id="sellForm">
+          <div class="form-grid">
+            <div><label>الكمية للبيع</label><input id="sell_qty" type="number" step="0.0001" min="0.0001" required></div>
+            <div><label>سعر البيع للوحدة</label><input id="sell_price" type="number" step="0.01" required></div>
+            <div><label>تاريخ البيع</label><input id="sell_date" type="date" value=""></div>
+            <div class="full"><label>ملاحظة (اختياري)</label><input id="sell_note"></div>
+          </div>
+
+          <div style="margin-top:12px">
+            <h4 style="margin:6px 0">معاينة التخصيص (FIFO)</h4>
+            <div id="sellAllocArea" style="max-height:220px;overflow:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.01)"></div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+            <div class="muted2">COGS المتوقع: <strong id="sellCogs">0</strong> — متوسط التكلفة: <strong id="sellAvg">0</strong></div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="ghost" onclick="closeSellModal()">إلغاء</button>
+              <button type="button" class="ghost" id="sellPreviewBtn">معاينة</button>
+              <button type="submit" class="primary">تأكيد البيع</button>
+            </div>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+  /**************************************************************************
+   * Self-contained UI (HTML/CSS/JS only)
+   * - All logic runs client-side (simulation).
+   * - Replace simulated data with server data / API calls as required.
+   **************************************************************************/
+
+  // ---------- Simulated data (you can edit these arrays) ----------
+  let products = [
+    {id:1, code:'SKU-001', name:'مسمار 5mm', unit:'صندوق', current_stock:15, selling_price:120.00, cost_price:100.00, reorder_level:5, created_at:'2025-09-01', desc:''},
+    {id:2, code:'SKU-002', name:'برغي 30mm', unit:'علبة', current_stock:7, selling_price:200.00, cost_price:85.00, reorder_level:3, created_at:'2025-07-19', desc:''},
+    {id:3, code:'SKU-003', name:'مطرقة', unit:'قطعة', current_stock:0, selling_price:320.00, cost_price:180.00, reorder_level:2, created_at:'2025-03-11', desc:''}
+  ];
+
+  // batches map: productId => [batches]
+  let batches = {
+    1: [{id:201, qty:10, remaining:5, unit_cost:100, received_at:'2025-08-01', expiry:null, notes:''},
+        {id:202, qty:10, remaining:10, unit_cost:140, received_at:'2025-09-01', expiry:null, notes:'توريد سبتمبر'}],
+    2: [{id:301, qty:10, remaining:7, unit_cost:85, received_at:'2025-07-01', expiry:null, notes:''}],
+    3: []
+  };
+
+  const sales = [];
+
+  // ---------- helpers ----------
+  const $ = id => document.getElementById(id);
+  function formatNum(n){ return Number(n||0).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+  function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function syncStockFromBatches(pid){ return (batches[pid]||[]).reduce((s,b)=>s + (parseFloat(b.remaining)||0), 0); }
+
+  // ---------- rendering ----------
+  function renderProductsTable(filterText=''){
+    const tbody = $('productsTbody'); tbody.innerHTML = '';
+    const q = (filterText||'').toLowerCase().trim();
+    let invValue = 0;
+    products.forEach(p=>{
+      p.current_stock = syncStockFromBatches(p.id);
+      if (q && !((p.name+p.code).toLowerCase().includes(q))) return;
+      invValue += (p.current_stock||0) * (p.cost_price||0);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${p.id}</td>
+        <td>${escapeHtml(p.code||'')}</td>
+        <td style="text-align:right"><strong>${escapeHtml(p.name)}</strong><div class="muted2">${escapeHtml(p.desc||'')}</div></td>
+        <td>${escapeHtml(p.unit||'')}</td>
+        <td><span class="badge ${p.current_stock==0?'red':p.current_stock<= (p.reorder_level||0) ? 'orange':'green'}">${p.current_stock}</span></td>
+        <td>${p.reorder_level||'-'}</td>
+        <td class="muted2">${p.created_at||''}</td>
+        <td>${formatNum(p.selling_price||0)}</td>
+        <td class="actions">
+          <button class="ghost" title="تعديل" onclick="openProductModal(${p.id})"><i class="fa-solid fa-pen"></i></button>
+          <button class="ghost" title="دفعات" onclick="openBatchesModal(${p.id})"><i class="fa-solid fa-layer-group"></i></button>
+          <button class="ghost" title="اضافة دفعة" onclick="openBatchesModal(${p.id}, true)"><i class="fa-solid fa-truck-loading"></i></button>
+          <button class="ghost" title="بيع" onclick="openSellModal(${p.id})"><i class="fa-solid fa-cash-register"></i></button>
+          <button class="ghost" title="حذف" onclick="onDeleteProduct(${p.id})"><i class="fa-solid fa-trash"></i></button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    $('kpiProducts').textContent = products.length;
+    $('kpiValue').textContent = formatNum(invValue) + ' ج';
+  }
+
+  renderProductsTable();
+
+  // search
+  $('searchQ').addEventListener('input', ()=> renderProductsTable($('searchQ').value));
+  $('clearSearch').addEventListener('click', ()=> { $('searchQ').value=''; renderProductsTable(); });
+
+  // export CSV
+  $('btnExport').addEventListener('click', ()=>{
+    let csv = 'id,code,name,unit,stock,cost,sell\\n';
+    products.forEach(p=> csv += `${p.id},${p.code},${p.name},${p.unit},${syncStockFromBatches(p.id)},${p.cost_price||0},${p.selling_price||0}\\n`);
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'products.csv'; a.click();
+  });
+
+  /**************************************************************************
+   * Product modal (add/edit)
+   **************************************************************************/
+  let editingProductId = null;
+  function openProductModal(id=null){
+    editingProductId = id;
+    $('productModal').style.display = 'flex';
+    if (id){
+      const p = products.find(x=>x.id===id);
+      $('productModalTitle').textContent = 'تعديل المنتج';
+      $('p_code').value = p.code || '';
+      $('p_name').value = p.name || '';
+      $('p_unit').value = p.unit || '';
+      $('p_cost').value = p.cost_price || '';
+      $('p_sell').value = p.selling_price || '';
+      $('p_reorder').value = p.reorder_level || '';
+      $('p_desc').value = p.desc || '';
+    } else {
+      document.getElementById('productForm').reset();
+      $('productModalTitle').textContent = 'إضافة منتج جديد';
+    }
+  }
+  function closeProductModal(){ $('productModal').style.display = 'none'; editingProductId = null; document.getElementById('productForm').reset(); }
+
+  $('btnAddProduct').addEventListener('click', ()=> openProductModal(null));
+
+  $('productForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const code = $('p_code').value.trim();
+    const name = $('p_name').value.trim();
+    const unit = $('p_unit').value.trim();
+    const cost = parseFloat($('p_cost').value) || 0;
+    const sell = parseFloat($('p_sell').value) || 0;
+    const reorder = parseInt($('p_reorder').value) || 0;
+    const desc = $('p_desc').value || '';
+    if (!code || !name || !unit) return alert('أكمل الحقول المطلوبة');
+    if (editingProductId){
+      const p = products.find(x=>x.id===editingProductId);
+      p.code = code; p.name = name; p.unit = unit; p.cost_price = cost; p.selling_price = sell; p.reorder_level = reorder; p.desc = desc;
+      closeProductModal(); renderProductsTable($('searchQ').value);
+    } else {
+      const newId = products.length ? Math.max(...products.map(p=>p.id)) + 1 : 1;
+      const np = {id:newId, code, name, unit, current_stock:0, selling_price: sell, cost_price: cost, reorder_level: reorder, created_at: new Date().toISOString().slice(0,10), desc};
+      products.unshift(np); batches[np.id] = batches[np.id] || [];
+      closeProductModal(); renderProductsTable();
+      alert('تم إضافة المنتج (محاكاة محليّة).');
+    }
+  });
+
+  function onDeleteProduct(id){
+    if (!confirm('هل تريد حذف هذا المنتج؟ سيُحذف أيضاً الدفعات المحلية.')) return;
+    products = products.filter(p=>p.id !== id);
+    delete batches[id];
+    renderProductsTable();
+  }
+
+  /**************************************************************************
+   * Batches modal
+   **************************************************************************/
+  let currentBatchProductId = null;
+  function openBatchesModal(productId, focusAdd=false){
+    currentBatchProductId = productId;
+    $('batchesModal').style.display = 'flex';
+    const p = products.find(x=>x.id===productId);
+    $('batchesModalTitle').textContent = `دفعات: ${p ? p.name : productId}`;
+    renderBatchesList();
+    if (focusAdd) setTimeout(()=> $('batch_qty').focus(), 120);
+  }
+  function closeBatchesModal(){ $('batchesModal').style.display = 'none'; currentBatchProductId = null; document.getElementById('batchForm').reset(); }
+
+  function renderBatchesList(){
+    const list = (batches[currentBatchProductId] || []).slice().sort((a,b)=> (a.received_at||'') > (b.received_at||'') ? 1 : -1);
+    const container = $('batchesList');
+    if (!list.length) { container.innerHTML = '<div class="muted2">لا توجد دفعات لهذا المنتج.</div>'; return; }
+    let html = `<div class="muted2">الرصيد الكلي: <strong>${list.reduce((s,b)=>s + (parseFloat(b.remaining)||0),0)}</strong></div>`;
+    html += `<table style="width:100%;margin-top:8px;border-collapse:collapse"><thead><tr style="color:var(--muted)"><th>id</th><th>كمية</th><th>متبقي</th><th>سعر الوحدة</th><th>تاريخ</th><th>انتهاء</th><th>م</th></tr></thead><tbody>`;
+    list.forEach(b=>{
+      html += `<tr style="text-align:center"><td>${b.id}</td><td>${b.qty}</td><td>${b.remaining}</td><td>${formatNum(b.unit_cost)}</td><td>${b.received_at||''}</td><td>${b.expiry||'-'}</td><td><button class="ghost" onclick="editBatch(${b.id})">تعديل</button></td></tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  // add batch
+  $('batchForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    if (!currentBatchProductId) return alert('اختر منتجاً أولاً');
+    const qty = parseFloat($('batch_qty').value) || 0;
+    const unit_cost = parseFloat($('batch_cost').value) || 0;
+    if (qty <= 0) return alert('الرجاء إدخال كمية صحيحة');
+    const newId = Math.floor(Math.random()*90000) + 1000;
+    const newBatch = {
+      id: newId, qty, remaining: qty, unit_cost, received_at: $('batch_date').value || new Date().toISOString().slice(0,10),
+      expiry: $('batch_expiry').value || null, supplier: $('batch_supplier').value || null, notes: $('batch_notes').value || ''
+    };
+    if (!batches[currentBatchProductId]) batches[currentBatchProductId] = [];
+    batches[currentBatchProductId].push(newBatch);
+    const p = products.find(x=>x.id===currentBatchProductId); if (p) p.current_stock = syncStockFromBatches(currentBatchProductId);
+    renderBatchesList(); renderProductsTable();
+    alert('تمت إضافة الدفعة (محاكاة).');
+    document.getElementById('batchForm').reset();
+  });
+
+  function editBatch(batchId){
+    const list = (batches[currentBatchProductId] || []);
+    const b = list.find(x=>x.id === batchId);
+    if (!b) return alert('دفعة غير موجودة');
+    $('batch_qty').value = b.qty;
+    $('batch_cost').value = b.unit_cost;
+    $('batch_date').value = b.received_at || '';
+    $('batch_expiry').value = b.expiry || '';
+    $('batch_supplier').value = b.supplier || '';
+    $('batch_notes').value = b.notes || '';
+    const handler = function(ev){
+      ev.preventDefault();
+      const newQty = parseFloat($('batch_qty').value) || b.qty;
+      // careful: in production you must protect against reducing qty below consumed amount
+      const delta = newQty - b.qty;
+      b.qty = newQty;
+      b.remaining = Math.max(0, (parseFloat(b.remaining)||0) + delta);
+      b.unit_cost = parseFloat($('batch_cost').value) || b.unit_cost;
+      b.received_at = $('batch_date').value || b.received_at;
+      b.expiry = $('batch_expiry').value || b.expiry;
+      b.supplier = $('batch_supplier').value || b.supplier;
+      b.notes = $('batch_notes').value || b.notes;
+      renderBatchesList(); renderProductsTable();
+      document.getElementById('batchForm').removeEventListener('submit', handler);
+      document.getElementById('batchForm').reset();
+      alert('تم تعديل الدفعة (محاكاة).');
+    };
+    document.getElementById('batchForm').addEventListener('submit', handler);
+    $('batch_qty').focus();
+  }
+
+  /**************************************************************************
+   * Sell modal & FIFO allocation
+   **************************************************************************/
+  let sellingProductId = null;
+  let lastComputedAlloc = null;
+
+  function openSellModal(pid){
+    sellingProductId = pid;
+    const p = products.find(x=>x.id===pid);
+    $('sellModal').style.display = 'flex';
+    $('sellModalTitle').textContent = `بيع: ${p.name}`;
+    $('sellProductName').textContent = `${p.name} — ${p.code || ''}`;
+    $('sellAvailable').textContent = syncStockFromBatches(pid);
+    $('sell_qty').value = '';
+    $('sell_price').value = p.selling_price || 0;
+    $('sell_date').value = new Date().toISOString().slice(0,10);
+    $('sellAllocArea').innerHTML = '<div class="muted2">أدخل الكمية ثم اضغط معاينة</div>';
+    $('sellCogs').textContent = '0';
+    $('sellAvg').textContent = '0';
+  }
+
+  function closeSellModal(){ sellingProductId = null; $('sellModal').style.display = 'none'; document.getElementById('sellForm').reset(); lastComputedAlloc=null; $('sellAllocArea').innerHTML=''; }
+
+  $('sellPreviewBtn').addEventListener('click', function(){
+    const q = parseFloat($('sell_qty').value) || 0;
+    if (!sellingProductId) return alert('اختر منتجًا أولاً');
+    if (q <= 0) return alert('ادخل كمية صحيحة');
+    const res = computeFifoAllocation(sellingProductId, q);
+    renderSellAllocation(res);
+  });
+
+  function computeFifoAllocation(pid, qtyNeeded){
+    const list = (batches[pid]||[]).slice().sort((a,b)=> (a.received_at||'') > (b.received_at||'') ? 1 : -1);
+    let remaining = Number(qtyNeeded)||0; const allocations=[];
+    for (const b of list){
+      if (remaining <= 0) break;
+      const avail = Number(b.remaining)||0;
+      if (avail <= 0) continue;
+      const take = Math.min(avail, remaining);
+      allocations.push({batchId: b.id, take, unit_cost: Number(b.unit_cost||0), beforeRemaining: avail});
+      remaining -= take;
+    }
+    const enough = remaining <= 0;
+    const totalCost = allocations.reduce((s,a)=> s + a.take * a.unit_cost, 0);
+    const avgCost = allocations.length ? (totalCost / allocations.reduce((s,a)=>s + a.take,0)) : 0;
+    return {allocations, enough, totalCost, avgCost};
+  }
+
+  function renderSellAllocation(obj){
+    const area = $('sellAllocArea'); area.innerHTML = '';
+    if (!obj.allocations.length){ area.innerHTML = '<div class="muted2">لا دفعات متاحة</div>'; $('sellCogs').textContent='0'; $('sellAvg').textContent='0'; return; }
+    let html = `<table style="width:100%;border-collapse:collapse"><thead><tr style="color:var(--muted)"><th>دفعة</th><th>مأخوذ</th><th>سعر الوحدة</th><th>تكلفة البند</th><th>الرصيد قبل</th></tr></thead><tbody>`;
+    obj.allocations.forEach(a=>{ html += `<tr style="text-align:center"><td>${a.batchId}</td><td>${a.take}</td><td>${formatNum(a.unit_cost)}</td><td>${formatNum(a.take * a.unit_cost)}</td><td>${a.beforeRemaining}</td></tr>`; });
+    html += '</tbody></table>';
+    if (!obj.enough) html += `<div style="color:var(--danger);margin-top:8px">الكمية المطلوبة أكبر من المخزون المتاح</div>`;
+    area.innerHTML = html;
+    $('sellCogs').textContent = formatNum(obj.totalCost);
+    $('sellAvg').textContent = formatNum(obj.avgCost);
+    lastComputedAlloc = obj;
+  }
+
+  // confirm sale (apply allocations locally)
+  $('sellForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const qty = parseFloat($('sell_qty').value) || 0;
+    const price = parseFloat($('sell_price').value) || 0;
+    const date = $('sell_date').value || new Date().toISOString().slice(0,10);
+    const note = $('sell_note').value || '';
+    if (!sellingProductId) return alert('لا يوجد منتج محدد');
+    if (qty <= 0) return alert('ادخل كمية صحيحة');
+    const compute = computeFifoAllocation(sellingProductId, qty);
+    if (!compute.enough) return alert('الرصيد غير كافٍ لإتمام البيع');
+    compute.allocations.forEach(a=>{
+      const list = batches[sellingProductId];
+      const b = list.find(x=>x.id === a.batchId);
+      if (b) b.remaining = Math.max(0, Number(b.remaining) - Number(a.take));
+    });
+    const prod = products.find(x=>x.id===sellingProductId);
+    if (prod) prod.current_stock = syncStockFromBatches(sellingProductId);
+    const sale = {id: Math.floor(Math.random()*900000)+1000, productId: sellingProductId, qty, price, date, allocations: compute.allocations, totalCost: compute.totalCost, revenue: qty*price};
+    sales.unshift(sale);
+    renderProductsTable($('searchQ').value);
+    renderBatchesList();
+    closeSellModal();
+    alert(`تم تأكيد البيع (محاكاة)\nالإيراد: ${formatNum(sale.revenue)} ج\nCOGS: ${formatNum(sale.totalCost)} ج\nالربح: ${formatNum(sale.revenue - sale.totalCost)} ج`);
+  });
+
+  /**************************************************************************
+   * Invoice simulation (left panel)
+   **************************************************************************/
+  const simHits = $('simProductHits'), simItemsTbody = $('simItemsTbody');
+  let simItems = []; // {productId, qty, selling_price, _fifo}
+
+  function renderSimHits(filter=''){
+    simHits.innerHTML = '';
+    const q = (filter||'').toLowerCase().trim();
+    products.forEach(p=>{
+      if (q && !((p.name+p.code).toLowerCase().includes(q))) return;
+      const div = document.createElement('div');
+      div.style.padding='8px'; div.style.borderBottom='1px dashed rgba(255,255,255,0.03)';
+      div.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${p.name}</strong><div class="muted2">${p.code} — رصيد: ${syncStockFromBatches(p.id)}</div></div><div style="text-align:left"><button class="btn" onclick="simAdd(${p.id})">أضف</button></div></div>`;
+      simHits.appendChild(div);
+    });
+  }
+  renderSimHits('');
+  $('simSearch').addEventListener('input', ()=> renderSimHits($('simSearch').value));
+
+  function simAdd(productId){
+    const p = products.find(x=>x.id===productId); if (!p) return;
+    const existing = simItems.find(it=>it.productId===productId);
+    if (existing){ existing.qty += 1; renderSimItems(); return; }
+    simItems.push({productId, qty:1, selling_price: p.selling_price || 0, _fifo:null});
+    renderSimItems();
+  }
+
+  function renderSimItems(){
+    simItemsTbody.innerHTML = ''; let total=0;
+    simItems.forEach((it, idx)=>{
+      const p = products.find(x=>x.id===it.productId);
+      const line = (Number(it.qty)||0) * (Number(it.selling_price)||0);
+      total += line;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${p.name}</td>
+        <td><input type="number" value="${it.qty}" min="0" step="0.0001" oninput="onSimQtyChange(${idx}, this.value)"></td>
+        <td><input type="number" value="${formatNum(it.selling_price)}" step="0.01" oninput="onSimPriceChange(${idx}, this.value)"></td>
+        <td class="muted2 sim-cogs">${formatNum(it._fifo?it._fifo.avgCost:0)}</td>
+        <td class="sim-line">${formatNum(line)}</td>
+        <td><button class="ghost" onclick="simRemove(${idx})">حذف</button></td>`;
+      simItemsTbody.appendChild(tr);
+    });
+    $('simTotal').textContent = formatNum(total);
+  }
+  function onSimQtyChange(i,val){ simItems[i].qty = Number(val) || 0; renderSimItems(); }
+  function onSimPriceChange(i,val){ simItems[i].selling_price = Number(val) || 0; renderSimItems(); }
+  function simRemove(i){ simItems.splice(i,1); renderSimItems(); }
+
+  $('btnSimPreview').addEventListener('click', ()=>{
+    $('simPreviewArea').innerHTML = '';
+    if (!simItems.length) return alert('أضف بنودًا أولاً');
+    let totalCOGS = 0; let allEnough = true;
+    simItems.forEach(it=>{
+      const res = computeFifoForInvoiceItem(it.productId, it.qty);
+      it._fifo = res;
+      totalCOGS += res.totalCost;
+      if (!res.enough) allEnough = false;
+      let html = `<div style="padding:8px;border-radius:8px;background:rgba(255,255,255,0.01);margin-bottom:6px"><strong>${products.find(p=>p.id===it.productId).name}</strong> — مطلوب: ${it.qty} — متوسط تكلفة: ${formatNum(res.avgCost)} — COGS: ${formatNum(res.totalCost)}<div style="margin-top:8px"><table style="width:100%;border-collapse:collapse"><thead><tr style="color:var(--muted)"><th>دفعة</th><th>مأخوذ</th><th>سعر الوحدة</th><th>تكلفة</th></tr></thead><tbody>`;
+      res.allocations.forEach(a=> html += `<tr style="text-align:center"><td>${a.batchId}</td><td>${a.take}</td><td>${formatNum(a.unit_cost)}</td><td>${formatNum(a.take*a.unit_cost)}</td></tr>`);
+      html += `</tbody></table></div></div>`;
+      $('simPreviewArea').insertAdjacentHTML('beforeend', html);
+    });
+    $('simPreviewArea').insertAdjacentHTML('beforeend', `<div style="margin-top:6px"><strong>إجمالي COGS المتوقع: ${formatNum(totalCOGS)}</strong></div>`);
+    if (!allEnough) $('simPreviewArea').insertAdjacentHTML('beforeend', `<div style="color:var(--danger);margin-top:6px">بعض البنود تتجاوز الرصيد المتاح</div>`);
+    renderSimItems();
+  });
+
+  function computeFifoForInvoiceItem(productId, qty){
+    const list = (batches[productId]||[]).slice().sort((a,b)=> (a.received_at||'') > (b.received_at||'') ? 1 : -1);
+    let remaining = Number(qty)||0; const allocations=[]; for (const b of list){
+      if (remaining<=0) break;
+      const avail = Number(b.remaining)||0;
+      if (avail<=0) continue;
+      const take = Math.min(avail, remaining);
+      allocations.push({batchId: b.id, take, unit_cost: Number(b.unit_cost||0)});
+      remaining -= take;
+    }
+    const enough = remaining<=0;
+    const totalCost = allocations.reduce((s,a)=> s + a.take*a.unit_cost,0);
+    const avgCost = allocations.length ? totalCost / allocations.reduce((s,a)=>s + a.take,0) : 0;
+    return {allocations, enough, totalCost, avgCost};
+  }
+
+  // send invoice (simulation — it mutates local batches)
+  $('btnSimSend').addEventListener('click', ()=>{
+    if (!simItems.length) return alert('لا توجد بنود');
+    for (const it of simItems){
+      const res = computeFifoForInvoiceItem(it.productId, it.qty);
+      if (!res.enough) return alert('الرصيد غير كافٍ لأحد المنتجات. افحص المعاينة.');
+    }
+    simItems.forEach(it=>{
+      const fifo = computeFifoForInvoiceItem(it.productId, it.qty);
+      fifo.allocations.forEach(a=>{
+        const b = (batches[it.productId] || []).find(x=>x.id === a.batchId);
+        if (b) b.remaining = Math.max(0, Number(b.remaining) - Number(a.take));
+      });
+    });
+    simItems = []; renderSimItems(); renderProductsTable(); $('simPreviewArea').innerHTML=''; alert('تم إنشاء الفاتورة محلياً (محاكاة).');
+  });
+
+  // expose some functions for inline onclick handlers
+  window.openProductModal = openProductModal;
+  window.openBatchesModal = openBatchesModal;
+  window.openSellModal = openSellModal;
+  window.onDeleteProduct = onDeleteProduct;
+  window.simAdd = simAdd;
+  window.editBatch = editBatch;
+  window.computeFifoAllocation = computeFifoAllocation;
+
+  // initial UI state
+  renderProductsTable();
+  renderSimHits();
+
+  </script>
+</body>
+</html>

@@ -140,7 +140,7 @@ if ($stmt_select = $conn->prepare($sql_select_suppliers)) {
 require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/navbar.php';
 $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]) . (!empty($search_term) ? "?search_term_val=" . urlencode($search_term) : "");
-$view_purchase_invoice_link = BASE_URL . "admin/view_purchase_invoice.php"; // افترض أن الصفحة ستكون هنا
+$create_purchase_invoice_link = BASE_URL . "admin/create_purchase_invoice.php"; // افترض أن الصفحة ستكون هنا
 require_once BASE_DIR . 'partials/sidebar.php';
 
 ?>
@@ -231,17 +231,13 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                             </button>
                                         </form>
 
-                                        <!-- <form action="<?php echo $view_purchase_invoice_link; ?>" method="post" class="d-inline ms-1">
+                                        <form action="<?php echo $create_purchase_invoice_link; ?>" method="post" class="d-inline ms-1">
                                             <input type="hidden" name="supplier_id" value="<?php echo $supplier["id"]; ?>">
                                             <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; // ممارسة جيدة ?>">
                                             <button type="submit" class="btn btn-success btn-sm" title="بدء عمل فاتورة وارد لهذا المورد">
                                                 <i class="fas fa-file-import"></i> فاتورة وارد
                                             </button>
-                                        </form> -->
-                                        <!-- استخدم رابط GET إلى صفحة العرض (view) مع تمرير supplier_id -->
-<a href="<?php echo BASE_URL; ?>admin/view_purchase_invoice.php?supplier_id=<?php echo intval($supplier['id']); ?>" class="btn btn-success btn-sm ms-1" title="بدء فاتورة وارد لهذا المورد">
-    <i class="fas fa-file-import"></i> فاتورة وارد
-</a>
+                                        </form>
                                         </td>
                                 </tr>
                             <?php endwhile; ?>
