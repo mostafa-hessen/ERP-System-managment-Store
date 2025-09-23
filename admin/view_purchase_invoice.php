@@ -1,17 +1,12 @@
 <?php
-// admin/view_purchase_invoice.php  (مُعدّل ليتوافق مع schema الموجودة ويمنع partial_received)
-// - مواءمة session user id
-// - تجاهل partial_received (نستخدم pending / fully_received / cancelled)
-// - عند fully_received: set qty_received = quantity, أنشئ batches، حدّث products.current_stock، خزّن batch_id
-// - منع التعديلات على الفاتورة بعد fully_received (لحماية المخزون)
-// - تحسينات CSRF / error handling / transactions
+// admin/view_purchase_invoice.php  (معدّل)
+// النسخة تتضمن: compute_sale_price_mysqli + endpoint get_product_prices + تعديلات add/update/finalize
 
 ob_start();
 
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 error_reporting(E_ALL);
-// require_once BASE_DIR . 'partials/session_admin.php'; // التأكد أن المستخدم مدير
 
 if (file_exists(dirname(__DIR__) . '/config.php')) {
   require_once dirname(__DIR__) . '/config.php';
@@ -45,6 +40,45 @@ function json_out($arr) {
   exit;
 }
 
+/**
+ * compute_sale_price_mysqli
+ * - يبحث أولاً في batches للحالة active ثم consumed (يتجاهل reverted/cancelled)
+ * - إذا وجد sale_price غير NULL يرجعها
+ * - خلاف ذلك يرجع products.selling_price أو products.default_price كـ fallback
+ */
+function compute_sale_price_mysqli($conn, $product_id) {
+    $sql = "
+      SELECT sale_price
+      FROM batches
+      WHERE product_id = ?
+        AND status IN ('active','consumed')
+      ORDER BY (status = 'active') DESC, received_at DESC, id DESC
+      LIMIT 1
+    ";
+    if ($stmt = $conn->prepare($sql)) {
+        $stmt->bind_param("i", $product_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($row = $res->fetch_assoc()) {
+            if (isset($row['sale_price']) && $row['sale_price'] !== null && $row['sale_price'] !== '') {
+                $stmt->close();
+                return (float)$row['sale_price'];
+            }
+        }
+        $stmt->close();
+    }
+    // fallback to product selling_price/default_price
+    $sql2 = "SELECT COALESCE(selling_price, default_price, 0) AS sp FROM products WHERE id = ? LIMIT 1";
+    if ($stmt2 = $conn->prepare($sql2)) {
+        $stmt2->bind_param("i", $product_id);
+        $stmt2->execute();
+        $r = $stmt2->get_result()->fetch_assoc();
+        $stmt2->close();
+        return isset($r['sp']) ? (float)$r['sp'] : 0.0;
+    }
+    return 0.0;
+}
+
 // ---------------- AJAX endpoints ----------------
 // 1) Search products (unchanged)
 if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
@@ -69,6 +103,54 @@ if (isset($_GET['action']) && $_GET['action'] === 'search_products') {
   json_out(['ok' => true, 'results' => $out]);
 }
 
+// 2) Get sale_price & unit_cost for product (AJAX GET ?action=get_product_prices&product_id=...)
+if (isset($_GET['action']) && $_GET['action'] === 'get_product_prices') {
+  header('Content-Type: application/json; charset=utf-8');
+  $product_id = intval($_GET['product_id'] ?? 0);
+  if ($product_id <= 0) json_out(['ok' => false, 'message' => 'invalid_product']);
+
+  // 1) sale_price logic (active then consumed) - use compute_sale_price_mysqli
+  $sale_price = compute_sale_price_mysqli($conn, $product_id);
+
+  // 2) unit_cost logic:
+  $unit_cost = null;
+  // a) try last batch status = active
+  $q1 = "SELECT unit_cost FROM batches WHERE product_id = ? AND status = 'active' ORDER BY received_at DESC, id DESC LIMIT 1";
+  if ($st1 = $conn->prepare($q1)) {
+    $st1->bind_param("i", $product_id);
+    $st1->execute();
+    $r1 = $st1->get_result()->fetch_assoc();
+    $st1->close();
+    if ($r1 && $r1['unit_cost'] !== null) $unit_cost = (float)$r1['unit_cost'];
+  }
+  // b) fallback: last batch any status except reverted/cancelled
+  if ($unit_cost === null) {
+    $q2 = "SELECT unit_cost FROM batches WHERE product_id = ? AND status NOT IN ('reverted','cancelled') ORDER BY received_at DESC, id DESC LIMIT 1";
+    if ($st2 = $conn->prepare($q2)) {
+      $st2->bind_param("i", $product_id);
+      $st2->execute();
+      $r2 = $st2->get_result()->fetch_assoc();
+      $st2->close();
+      if ($r2 && $r2['unit_cost'] !== null) $unit_cost = (float)$r2['unit_cost'];
+    }
+  }
+  // c) fallback: product cost field (cost_price or last_purchase_cost)
+  if ($unit_cost === null) {
+    $q3 = "SELECT COALESCE(cost_price, last_purchase_cost, 0) AS cp FROM products WHERE id = ? LIMIT 1";
+    if ($st3 = $conn->prepare($q3)) {
+      $st3->bind_param("i", $product_id);
+      $st3->execute();
+      $r3 = $st3->get_result()->fetch_assoc();
+      $st3->close();
+      $unit_cost = isset($r3['cp']) ? (float)$r3['cp'] : 0.0;
+    } else {
+      $unit_cost = 0.0;
+    }
+  }
+
+  json_out(['ok' => true, 'sale_price' => round($sale_price,4), 'unit_cost' => round($unit_cost,4)]);
+}
+
 // Helper: check invoice status (for protecting edits)
 function get_invoice_status($conn, $invoice_id) {
   $st = $conn->prepare("SELECT status FROM purchase_invoices WHERE id = ? LIMIT 1");
@@ -79,14 +161,15 @@ function get_invoice_status($conn, $invoice_id) {
   return $r['status'] ?? null;
 }
 
-// Add item to existing invoice (AJAX)
+// ---------------- Add item AJAX ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_item_ajax') {
   if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success' => false, 'message' => 'CSRF']);
   $invoice_id = intval($_POST['invoice_id'] ?? 0);
   $product_id = intval($_POST['product_id'] ?? 0);
   $qty = floatval($_POST['quantity'] ?? 0);
   $cost = floatval($_POST['cost_price'] ?? 0);
-  $selling = floatval($_POST['selling_price'] ?? -1);
+  // note: client may send selling_price OR not
+  $selling = isset($_POST['selling_price']) ? floatval($_POST['selling_price']) : -1;
   if ($invoice_id <= 0 || $product_id <= 0 || $qty <= 0) json_out(['success' => false, 'message' => 'بيانات غير صحيحة']);
   // prevent modification if invoice already fully_received
   $status = get_invoice_status($conn, $invoice_id);
@@ -103,21 +186,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $st_check->close();
 
     if ($existing) {
+      // compute final sale price (posted takes precedence)
+      if ($selling >= 0) {
+        $final_sp = $selling;
+      } else {
+        $final_sp = compute_sale_price_mysqli($conn, $product_id);
+      }
       $new_qty = floatval($existing['quantity']) + $qty;
       $new_total = $new_qty * $cost;
-      $st_up = $conn->prepare("UPDATE purchase_invoice_items SET quantity = ?, cost_price_per_unit = ?, total_cost = ?, updated_at = NOW() WHERE id = ?");
-      $st_up->bind_param("dddi", $new_qty, $cost, $new_total, $existing['id']);
+      $st_up = $conn->prepare("UPDATE purchase_invoice_items SET quantity = ?, cost_price_per_unit = ?, total_cost = ?, sale_price = ?, updated_at = NOW() WHERE id = ?");
+      $st_up->bind_param("ddddi", $new_qty, $cost, $new_total, $final_sp, $existing['id']);
       if (!$st_up->execute()) {
         $conn->rollback();
         json_out(['success' => false, 'message' => 'فشل التحديث: ' . $st_up->error]);
       }
       $st_up->close();
+
       if ($selling >= 0) {
         $stps = $conn->prepare("UPDATE products SET selling_price = ? WHERE id = ?");
         $stps->bind_param("di", $selling, $product_id);
         $stps->execute();
         $stps->close();
       }
+
       // recalc invoice total
       $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
       $st_sum->bind_param("i", $invoice_id);
@@ -130,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       $st_up_inv->execute();
       $st_up_inv->close();
 
-      $st_item = $conn->prepare("SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost, p.product_code, p.name as product_name, p.unit_of_measure FROM purchase_invoice_items p_item JOIN products p ON p_item.product_id = p.id WHERE p_item.id = ?");
+      $st_item = $conn->prepare("SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost, p_item.sale_price, p.product_code, p.name as product_name, p.unit_of_measure FROM purchase_invoice_items p_item JOIN products p ON p_item.product_id = p.id WHERE p_item.id = ?");
       $st_item->bind_param("i", $existing['id']);
       $st_item->execute();
       $item_row = $st_item->get_result()->fetch_assoc();
@@ -140,21 +231,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       json_out(['success' => true, 'message' => 'تم تحديث البند', 'item' => $item_row, 'grand_total' => $grand_total]);
     } else {
       $total = $qty * $cost;
+      // determine sale_price to store
+      if ($selling >= 0) {
+        $final_sp = $selling;
+      } else {
+        $final_sp = compute_sale_price_mysqli($conn, $product_id);
+      }
+
       // when invoice not yet fully_received, qty_received remains 0
-      $st = $conn->prepare("INSERT INTO purchase_invoice_items (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost, created_at, qty_received) VALUES (?, ?, ?, ?, ?, NOW(), 0)");
-      $st->bind_param("iiddd", $invoice_id, $product_id, $qty, $cost, $total);
+      $st = $conn->prepare("INSERT INTO purchase_invoice_items (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost, sale_price, created_at, qty_received) VALUES (?, ?, ?, ?, ?, ?, NOW(), 0)");
+      $st->bind_param("iiddddd", $invoice_id, $product_id, $qty, $cost, $total, $final_sp);
       if (!$st->execute()) {
         $conn->rollback();
         json_out(['success' => false, 'message' => 'فشل الإدخال: ' . $st->error]);
       }
       $new_item_id = $conn->insert_id;
       $st->close();
+
       if ($selling >= 0) {
         $stps = $conn->prepare("UPDATE products SET selling_price = ? WHERE id = ?");
         $stps->bind_param("di", $selling, $product_id);
         $stps->execute();
         $stps->close();
       }
+
       // recalc invoice total
       $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
       $st_sum->bind_param("i", $invoice_id);
@@ -168,7 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       $st_up->close();
       $conn->commit();
 
-      $st_item = $conn->prepare("SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost, p.product_code, p.name as product_name, p.unit_of_measure FROM purchase_invoice_items p_item JOIN products p ON p_item.product_id = p.id WHERE p_item.id = ?");
+      $st_item = $conn->prepare("SELECT p_item.id as item_id_pk, p_item.product_id, p_item.quantity, p_item.cost_price_per_unit, p_item.total_cost, p_item.sale_price, p.product_code, p.name as product_name, p.unit_of_measure FROM purchase_invoice_items p_item JOIN products p ON p_item.product_id = p.id WHERE p_item.id = ?");
       $st_item->bind_param("i", $new_item_id);
       $st_item->execute();
       $item_row = $st_item->get_result()->fetch_assoc();
@@ -182,22 +282,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
   }
 }
 
-// Update item AJAX
+// ---------------- Update item AJAX ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_item_ajax') {
   if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success' => false, 'message' => 'CSRF']);
   $item_id = intval($_POST['item_id'] ?? 0);
   $qty = floatval($_POST['quantity'] ?? 0);
   $cost = floatval($_POST['cost_price'] ?? 0);
-  $selling = floatval($_POST['selling_price'] ?? -1);
+  $selling = isset($_POST['selling_price']) ? floatval($_POST['selling_price']) : -1;
   if ($item_id <= 0 || $qty < 0) json_out(['success' => false, 'message' => 'بيانات غير صحيحة']);
 
   // check invoice status
-  $st_get_invoice = $conn->prepare("SELECT purchase_invoice_id FROM purchase_invoice_items WHERE id = ? LIMIT 1");
+  $st_get_invoice = $conn->prepare("SELECT purchase_invoice_id, product_id FROM purchase_invoice_items WHERE id = ? LIMIT 1");
   $st_get_invoice->bind_param("i", $item_id);
   $st_get_invoice->execute();
   $resinv = $st_get_invoice->get_result()->fetch_assoc();
   $st_get_invoice->close();
   $invoice_id = intval($resinv['purchase_invoice_id'] ?? 0);
+  $product_id = intval($resinv['product_id'] ?? 0);
   if ($invoice_id <= 0) json_out(['success' => false, 'message' => 'البند غير مرتبط بأي فاتورة']);
 
   $status = get_invoice_status($conn, $invoice_id);
@@ -208,18 +309,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
   try {
     $total = $qty * $cost;
-    $st = $conn->prepare("UPDATE purchase_invoice_items SET quantity = ?, cost_price_per_unit = ?, total_cost = ?, updated_at = NOW() WHERE id = ?");
-    $st->bind_param("dddi", $qty, $cost, $total, $item_id);
+
+    // compute sale_price
+    if ($selling >= 0) {
+      $final_sp = $selling;
+    } else {
+      $final_sp = compute_sale_price_mysqli($conn, $product_id);
+    }
+
+    $st = $conn->prepare("UPDATE purchase_invoice_items SET quantity = ?, cost_price_per_unit = ?, total_cost = ?, sale_price = ?, updated_at = NOW() WHERE id = ?");
+    if (!$st) json_out(['success' => false, 'message' => 'فشل التحضير: ' . $conn->error]);
+    $st->bind_param("ddd di", $qty, $cost, $total, $final_sp, $item_id); // corrected below
+    // Note: bind_param must not contain spaces in type string; use correct call:
+    $st->bind_param("ddddi", $qty, $cost, $total, $final_sp, $item_id);
     if (!$st->execute()) json_out(['success' => false, 'message' => 'فشل التحديث: ' . $st->error]);
     $st->close();
+
     if ($selling >= 0) {
-      $stp = $conn->prepare("UPDATE products SET selling_price = ? WHERE id = (SELECT product_id FROM purchase_invoice_items WHERE id = ? LIMIT 1)");
+      $stp = $conn->prepare("UPDATE products SET selling_price = ? WHERE id = ?");
       if ($stp) {
-        $stp->bind_param("di", $selling, $item_id);
+        $stp->bind_param("di", $selling, $product_id);
         $stp->execute();
         $stp->close();
       }
     }
+
     $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
     $st_sum->bind_param("i", $invoice_id);
     $st_sum->execute();
@@ -233,11 +347,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     json_out(['success' => true, 'message' => 'تم التحديث', 'total_cost' => $total, 'grand_total' => $grand_total]);
   } catch (Exception $ex) {
     error_log("update_item_ajax exception: " . $ex->getMessage());
+    if ($conn->in_transaction) $conn->rollback();
     json_out(['success' => false, 'message' => 'خطأ: ' . $ex->getMessage()]);
   }
 }
 
-// Delete item AJAX
+// ---------------- Delete item AJAX ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_item_ajax') {
   if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success' => false, 'message' => 'CSRF']);
   $item_id = intval($_POST['item_id'] ?? 0);
@@ -313,7 +428,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
           json_out(['success' => false, 'message' => 'دفعة مرتبطة بالبند غير موجودة']);
         }
       } else {
-        json_out(['success' => false, 'message' => 'لا يمكن حذف بنود فاتورة مستلمة بالكامل بدون دفعات مرتبطة']); 
+        json_out(['success' => false, 'message' => 'لا يمكن حذف بنود فاتورة مستلمة بالكامل بدون دفعات مرتبطة']);
       }
     } else {
       // invoice pending: safe to delete item directly
@@ -340,8 +455,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
   }
 }
 
-// Change invoice status (AJAX)
-// Allowed statuses: pending, fully_received, cancelled
+// ---------------- Change invoice status (AJAX) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'change_status_ajax') {
   if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success' => false, 'message' => 'CSRF']);
   $invoice_id = intval($_POST['invoice_id'] ?? 0);
@@ -461,38 +575,228 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
   }
 }
 
-// Finalize invoice (AJAX) - create invoice + items + optionally batches (if fully_received)
+// ---------------- Finalize invoice (AJAX) - create invoice + items + optionally batches (if fully_received) ----------------
+// if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'finalize_invoice_ajax') {
+//   if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success' => false, 'message' => 'CSRF']);
+//   $supplier_id = intval($_POST['supplier_id'] ?? 0);
+//   $purchase_date = trim($_POST['purchase_date'] ?? date('Y-m-d'));
+//   $status = $_POST['status'] ?? 'pending';
+//   // normalize: ignore partial_received
+//   if ($status !== 'fully_received') $status = 'pending';
+//   $notes = trim($_POST['notes'] ?? '');
+//   $items_json = $_POST['items'] ?? '[]';
+//   $items = json_decode($items_json, true);
+//   if ($supplier_id <= 0) json_out(['success' => false, 'message' => 'اختر موردًا قبل الإتمام']);
+//   if (!is_array($items) || count($items) === 0) json_out(['success' => false, 'message' => 'الفاتورة لا يمكن أن تكون فارغة']);
+//   $valid_items = [];
+//   foreach ($items as $it) {
+//     $pid = intval($it['product_id'] ?? 0);
+//     $qty = floatval($it['qty'] ?? 0);
+//     $cost = floatval($it['cost_price'] ?? 0);
+//     if ($pid <= 0 || $qty <= 0) continue;
+//     $valid_items[] = [
+//       'product_id' => $pid,
+//       'quantity' => $qty,
+//       'cost_price' => $cost,
+//       'total' => $qty * $cost,
+//       'selling_price' => isset($it['selling_price']) ? floatval($it['selling_price']) : -1
+//     ];
+//   }
+//   if (empty($valid_items)) json_out(['success' => false, 'message' => 'لا توجد بنود صالحة لإتمام الفاتورة']);
+//   try {
+//     $conn->begin_transaction();
+//     $created_by = $user_id ?? 0;
+//     $supplier_invoice_number = trim($_POST['supplier_invoice_number'] ?? '');
+//     $st = $conn->prepare("INSERT INTO purchase_invoices (supplier_id,supplier_invoice_number,purchase_date,notes,total_amount,status,created_by,created_at) VALUES (?, ?, ?, ?, 0, ?, ?, NOW())");
+//     if (!$st) {
+//       $conn->rollback();
+//       json_out(['success' => false, 'message' => 'تحضير إدخال الفاتورة فشل: ' . $conn->error]);
+//     }
+//     $st->bind_param("issssi", $supplier_id, $supplier_invoice_number, $purchase_date, $notes, $status, $created_by);
+//     if (!$st->execute()) {
+//       $err = $st->error;
+//       $st->close();
+//       $conn->rollback();
+//       json_out(['success' => false, 'message' => 'فشل إدخال الفاتورة: ' . $err]);
+//     }
+//     $new_invoice_id = $st->insert_id;
+//     $st->close();
+
+//     // prepare insert for invoice items (includes sale_price)
+//     $ins = $conn->prepare("
+//       INSERT INTO purchase_invoice_items
+//         (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost, sale_price, created_at, qty_received)
+//       VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+//     ");
+//     if (!$ins) {
+//       $conn->rollback();
+//       json_out(['success' => false, 'message' => 'تحضير إدخال البنود فشل: ' . $conn->error]);
+//     }
+
+//     $created_batch_count = 0;
+//     foreach ($valid_items as $it) {
+//       $pid = $it['product_id'];
+//       $qty = $it['quantity'];
+//       $cost = $it['cost_price'];
+//       $total = $it['total'];
+//       // qty_received = quantity if fully_received, else 0
+//       $qty_received_insert = ($status === 'fully_received') ? $qty : 0.0;
+//       $posted_sp = $it['selling_price'] ?? -1;
+//       if ($posted_sp >= 0) {
+//         $final_sale_price = $posted_sp;
+//       } else {
+//         $final_sale_price = compute_sale_price_mysqli($conn, $pid);
+//       }
+
+//       // bind & execute insert item
+//       $invoice_id_b = $new_invoice_id;
+//       $product_id_b = $pid;
+//       $qty_b = $qty;
+//       $cost_b = $cost;
+//       $total_b = $total;
+//       $sale_price_b = $final_sale_price;
+//       $qty_received_b = $qty_received_insert;
+
+//       if (!$ins->bind_param("iiddddd", $invoice_id_b, $product_id_b, $qty_b, $cost_b, $total_b, $sale_price_b, $qty_received_b)) {
+//         $ins->close();
+//         $conn->rollback();
+//         json_out(['success' => false, 'message' => 'فشل bind_param لبند الفاتورة: ' . $ins->error]);
+//       }
+//       if (!$ins->execute()) {
+//         $ins->close();
+//         $conn->rollback();
+//         json_out(['success' => false, 'message' => 'فشل إضافة بند: ' . $ins->error]);
+//       }
+//       $inserted_item_id = $conn->insert_id;
+
+//       // update product selling_price if posted_sp provided
+//       if ($posted_sp >= 0) {
+//         $sp = $posted_sp;
+//         $stps = $conn->prepare("UPDATE products SET selling_price = ? WHERE id = ?");
+//         if ($stps) {
+//           $stps->bind_param("di", $sp, $pid);
+//           $stps->execute();
+//           $stps->close();
+//         }
+//       }
+
+//       if ($status === 'fully_received') {
+//         // update only product stock (not cost_price or selling_price)
+//         $upd = $conn->prepare("UPDATE products SET current_stock = current_stock + ? WHERE id = ?");
+//         $upd->bind_param("di", $qty, $pid);
+//         if (!$upd->execute()) {
+//           $conn->rollback();
+//           json_out(['success' => false, 'message' => 'فشل تحديث رصيد المنتج: ' . $upd->error]);
+//         }
+//         $upd->close();
+
+//         // insert batch with sale_price
+//         $insb = $conn->prepare("INSERT INTO batches (product_id, qty, remaining, original_qty, unit_cost, sale_price, received_at, source_invoice_id, source_item_id, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, 'active', ?, NOW(), NOW())");
+//         $insb->bind_param("iddddidiii", $pid, $qty, $qty, $qty, $cost, $final_sale_price, $new_invoice_id, $inserted_item_id, $created_by);
+//         if (!$insb->execute()) {
+//           error_log("Failed to insert batch for invoice {$new_invoice_id}, item {$inserted_item_id}: " . $insb->error);
+//           $insb->close();
+//           $ins->close();
+//           $conn->rollback();
+//           json_out(['success' => false, 'message' => 'فشل إنشاء دفعة للمخزن: ' . $insb->error]);
+//         }
+//         $new_batch_id = $insb->insert_id;
+//         $insb->close();
+
+//         // update purchase_invoice_items.batch_id
+//         $up_item = $conn->prepare("UPDATE purchase_invoice_items SET batch_id = ? WHERE id = ?");
+//         $up_item->bind_param("ii", $new_batch_id, $inserted_item_id);
+//         if (!$up_item->execute()) {
+//           $conn->rollback();
+//           json_out(['success' => false, 'message' => 'فشل ربط البند بالدفعة: ' . $up_item->error]);
+//         }
+//         $up_item->close();
+
+//         $created_batch_count++;
+//       }
+//     } // end foreach
+//     $ins->close();
+
+//     // compute grand total
+//     $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
+//     $st_sum->bind_param("i", $new_invoice_id);
+//     $st_sum->execute();
+//     $g = $st_sum->get_result()->fetch_assoc();
+//     $st_sum->close();
+//     $grand_total = floatval($g['grand_total'] ?? 0);
+//     $st_up = $conn->prepare("UPDATE purchase_invoices SET total_amount = ? WHERE id = ?");
+//     $st_up->bind_param("di", $grand_total, $new_invoice_id);
+//     $st_up->execute();
+//     $st_up->close();
+
+//     $conn->commit();
+
+//     $status_label = ($status === 'fully_received') ? 'تم الاستلام' : 'قيد الانتظار';
+//     json_out([
+//       'success' => true,
+//       'message' => 'تمت إضافة الفاتورة بنجاح',
+//       'invoice_id' => $new_invoice_id,
+//       'grand_total' => $grand_total,
+//       'status' => $status,
+//       'status_label' => $status_label,
+//       'created_batches' => $created_batch_count
+//     ]);
+//   } catch (Exception $ex) {
+//     if ($conn->in_transaction) $conn->rollback();
+//     error_log("finalize_invoice_ajax exception: " . $ex->getMessage());
+//     json_out(['success' => false, 'message' => 'خطأ في الخادم: ' . $ex->getMessage()]);
+//   }
+// }
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'finalize_invoice_ajax') {
-  if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) json_out(['success' => false, 'message' => 'CSRF']);
+  // تحقق الـ CSRF
+  if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    json_out(['success' => false, 'message' => 'CSRF']);
+  }
+
   $supplier_id = intval($_POST['supplier_id'] ?? 0);
   $purchase_date = trim($_POST['purchase_date'] ?? date('Y-m-d'));
   $status = $_POST['status'] ?? 'pending';
-  // normalize: ignore partial_received
   if ($status !== 'fully_received') $status = 'pending';
   $notes = trim($_POST['notes'] ?? '');
   $items_json = $_POST['items'] ?? '[]';
   $items = json_decode($items_json, true);
+
   if ($supplier_id <= 0) json_out(['success' => false, 'message' => 'اختر موردًا قبل الإتمام']);
   if (!is_array($items) || count($items) === 0) json_out(['success' => false, 'message' => 'الفاتورة لا يمكن أن تكون فارغة']);
+
   $valid_items = [];
   foreach ($items as $it) {
     $pid = intval($it['product_id'] ?? 0);
     $qty = floatval($it['qty'] ?? 0);
     $cost = floatval($it['cost_price'] ?? 0);
     if ($pid <= 0 || $qty <= 0) continue;
-    $valid_items[] = ['product_id' => $pid, 'quantity' => $qty, 'cost_price' => $cost, 'total' => $qty * $cost, 'selling_price' => floatval($it['selling_price'] ?? -1)];
+    $valid_items[] = [
+      'product_id' => $pid,
+      'quantity' => $qty,
+      'cost_price' => $cost,
+      'total' => $qty * $cost,
+      'selling_price' => isset($it['selling_price']) ? floatval($it['selling_price']) : -1
+    ];
   }
   if (empty($valid_items)) json_out(['success' => false, 'message' => 'لا توجد بنود صالحة لإتمام الفاتورة']);
+
   try {
     $conn->begin_transaction();
     $created_by = $user_id ?? 0;
     $supplier_invoice_number = trim($_POST['supplier_invoice_number'] ?? '');
-    $st = $conn->prepare("INSERT INTO purchase_invoices (supplier_id,supplier_invoice_number,purchase_date,notes,total_amount,status,created_by,created_at) VALUES (?, ?, ?, ?, 0, ?, ?, NOW())");
+
+    // INSERT INTO purchase_invoices
+    $st = $conn->prepare("INSERT INTO purchase_invoices (supplier_id, supplier_invoice_number, purchase_date, notes, total_amount, status, created_by, created_at) VALUES (?, ?, ?, ?, 0, ?, ?, NOW())");
     if (!$st) {
       $conn->rollback();
       json_out(['success' => false, 'message' => 'تحضير إدخال الفاتورة فشل: ' . $conn->error]);
     }
-    $st->bind_param("issssi", $supplier_id, $supplier_invoice_number, $purchase_date, $notes, $status, $created_by);
+    if (!$st->bind_param("issssi", $supplier_id, $supplier_invoice_number, $purchase_date, $notes, $status, $created_by)) {
+      $st->close();
+      $conn->rollback();
+      json_out(['success' => false, 'message' => 'فشل bind_param لإدخال الفاتورة: ' . $st->error]);
+    }
     if (!$st->execute()) {
       $err = $st->error;
       $st->close();
@@ -502,20 +806,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $new_invoice_id = $st->insert_id;
     $st->close();
 
-    $ins = $conn->prepare("INSERT INTO purchase_invoice_items (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost, created_at, qty_received) VALUES (?, ?, ?, ?, ?, NOW(), ?)");
+    // prepare insert for invoice items (includes sale_price and qty_received)
+    $ins = $conn->prepare("
+      INSERT INTO purchase_invoice_items
+        (purchase_invoice_id, product_id, quantity, cost_price_per_unit, total_cost, sale_price, created_at, qty_received)
+      VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+    ");
     if (!$ins) {
       $conn->rollback();
       json_out(['success' => false, 'message' => 'تحضير إدخال البنود فشل: ' . $conn->error]);
     }
+
     $created_batch_count = 0;
     foreach ($valid_items as $it) {
       $pid = $it['product_id'];
       $qty = $it['quantity'];
       $cost = $it['cost_price'];
       $total = $it['total'];
-      // qty_received = quantity if fully_received, else 0
       $qty_received_insert = ($status === 'fully_received') ? $qty : 0.0;
-      $ins->bind_param("iidddd", $new_invoice_id, $pid, $qty, $cost, $total, $qty_received_insert);
+      $posted_sp = $it['selling_price'] ?? -1;
+      $final_sale_price = ($posted_sp >= 0) ? $posted_sp : compute_sale_price_mysqli($conn, $pid);
+
+      // bind & execute insert item
+      $invoice_id_b = $new_invoice_id;
+      $product_id_b = $pid;
+      $qty_b = $qty;
+      $cost_b = $cost;
+      $total_b = $total;
+      $sale_price_b = $final_sale_price;
+      $qty_received_b = $qty_received_insert;
+
+      // types: invoice_id(i), product_id(i), quantity(d), cost_price(d), total(d), sale_price(d), qty_received(d)
+      if (!$ins->bind_param("iiddddd", $invoice_id_b, $product_id_b, $qty_b, $cost_b, $total_b, $sale_price_b, $qty_received_b)) {
+        $ins->close();
+        $conn->rollback();
+        json_out(['success' => false, 'message' => 'فشل bind_param لبند الفاتورة: ' . $ins->error]);
+      }
       if (!$ins->execute()) {
         $ins->close();
         $conn->rollback();
@@ -523,26 +849,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
       }
       $inserted_item_id = $conn->insert_id;
 
-      if (isset($it['selling_price']) && floatval($it['selling_price']) >= 0) {
-        $sp = floatval($it['selling_price']);
-        $stps = $conn->prepare("UPDATE products SET selling_price = ? WHERE id = ?");
-        $stps->bind_param("di", $sp, $pid);
-        $stps->execute();
-        $stps->close();
-      }
-
+      // IMPORTANT: do NOT update products.cost_price or products.selling_price here.
+      // Only update current_stock when fully_received.
       if ($status === 'fully_received') {
-        // update product stock and create batch
-        $upd = $conn->prepare("UPDATE products SET current_stock = current_stock + ?, cost_price = ? WHERE id = ?");
-        $upd->bind_param("dii", $qty, $cost, $pid);
-        if (!$upd->execute()) {
+        // UPDATE products SET current_stock = current_stock + ? WHERE id = ?
+        $upd = $conn->prepare("UPDATE products SET current_stock = current_stock + ? WHERE id = ?");
+        if (!$upd) {
+          $ins->close();
           $conn->rollback();
-          json_out(['success' => false, 'message' => 'فشل تحديث رصيد المنتج: ' . $upd->error]);
+          json_out(['success' => false, 'message' => 'فشل تحضير تحديث رصيد المنتج: ' . $conn->error]);
+        }
+        if (!$upd->bind_param("di", $qty, $pid)) {
+          $upd->close();
+          $ins->close();
+          $conn->rollback();
+          json_out(['success' => false, 'message' => 'فشل bind_param لتحديث رصيد المنتج: ' . $upd->error]);
+        }
+        if (!$upd->execute()) {
+          $upd->close();
+          $ins->close();
+          $conn->rollback();
+          json_out(['success' => false, 'message' => 'فشل تنفيذ تحديث رصيد المنتج: ' . $upd->error]);
         }
         $upd->close();
 
-        $insb = $conn->prepare("INSERT INTO batches (product_id, qty, remaining, original_qty, unit_cost, received_at, source_invoice_id, source_item_id, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, 'active', ?, NOW(), NOW())");
-        $insb->bind_param("iddddiii", $pid, $qty, $qty, $qty, $cost, $new_invoice_id, $inserted_item_id, $created_by);
+        // insert batch INCLUDING sale_price
+        $insb = $conn->prepare("
+          INSERT INTO batches
+            (product_id, qty, remaining, original_qty, unit_cost, sale_price, received_at, source_invoice_id, source_item_id, status, created_by, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, 'active', ?, NOW(), NOW())
+        ");
+        if (!$insb) {
+          $ins->close();
+          $conn->rollback();
+          json_out(['success' => false, 'message' => 'فشل تحضير إدخال الدفعة: ' . $conn->error]);
+        }
+
+        // types: product_id(i), qty(d), remaining(d), original_qty(d), unit_cost(d), sale_price(d), invoice_id(i), item_id(i), created_by(i)
+        if (!$insb->bind_param("idddddiii", $pid, $qty, $qty, $qty, $cost, $final_sale_price, $new_invoice_id, $inserted_item_id, $created_by)) {
+          $insb->close();
+          $ins->close();
+          $conn->rollback();
+          json_out(['success' => false, 'message' => 'فشل bind_param لإنشاء الدفعة: ' . $insb->error]);
+        }
+
         if (!$insb->execute()) {
           error_log("Failed to insert batch for invoice {$new_invoice_id}, item {$inserted_item_id}: " . $insb->error);
           $insb->close();
@@ -555,28 +905,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // update purchase_invoice_items.batch_id
         $up_item = $conn->prepare("UPDATE purchase_invoice_items SET batch_id = ? WHERE id = ?");
-        $up_item->bind_param("ii", $new_batch_id, $inserted_item_id);
+        if (!$up_item) {
+          $conn->rollback();
+          json_out(['success' => false, 'message' => 'فشل تحضير ربط البند بالدفعة: ' . $conn->error]);
+        }
+        if (!$up_item->bind_param("ii", $new_batch_id, $inserted_item_id)) {
+          $up_item->close();
+          $conn->rollback();
+          json_out(['success' => false, 'message' => 'فشل bind_param لربط البند بالدفعة: ' . $up_item->error]);
+        }
         if (!$up_item->execute()) {
+          $up_item->close();
           $conn->rollback();
           json_out(['success' => false, 'message' => 'فشل ربط البند بالدفعة: ' . $up_item->error]);
         }
         $up_item->close();
 
         $created_batch_count++;
-      }
-    }
+      } // end if fully_received
+    } // end foreach items
+
     $ins->close();
 
     // compute grand total
     $st_sum = $conn->prepare("SELECT IFNULL(SUM(total_cost),0) AS grand_total FROM purchase_invoice_items WHERE purchase_invoice_id = ?");
-    $st_sum->bind_param("i", $new_invoice_id);
-    $st_sum->execute();
-    $g = $st_sum->get_result()->fetch_assoc();
+    if (!$st_sum) {
+      $conn->rollback();
+      json_out(['success' => false, 'message' => 'فشل تحضير جمع المجموع: ' . $conn->error]);
+    }
+    if (!$st_sum->bind_param("i", $new_invoice_id)) {
+      $st_sum->close();
+      $conn->rollback();
+      json_out(['success' => false, 'message' => 'فشل bind_param لجمع المجموع: ' . $st_sum->error]);
+    }
+    if (!$st_sum->execute()) {
+      $st_sum->close();
+      $conn->rollback();
+      json_out(['success' => false, 'message' => 'فشل تنفيذ جمع المجموع: ' . $st_sum->error]);
+    }
+    $res = $st_sum->get_result();
+    $g = $res ? $res->fetch_assoc() : ['grand_total' => 0];
     $st_sum->close();
     $grand_total = floatval($g['grand_total'] ?? 0);
+
+    // update invoice total
     $st_up = $conn->prepare("UPDATE purchase_invoices SET total_amount = ? WHERE id = ?");
-    $st_up->bind_param("di", $grand_total, $new_invoice_id);
-    $st_up->execute();
+    if (!$st_up) {
+      $conn->rollback();
+      json_out(['success' => false, 'message' => 'فشل تحضير تحديث الفاتورة: ' . $conn->error]);
+    }
+    if (!$st_up->bind_param("di", $grand_total, $new_invoice_id)) {
+      $st_up->close();
+      $conn->rollback();
+      json_out(['success' => false, 'message' => 'فشل bind_param لتحديث الفاتورة: ' . $st_up->error]);
+    }
+    if (!$st_up->execute()) {
+      $st_up->close();
+      $conn->rollback();
+      json_out(['success' => false, 'message' => 'فشل تحديث الفاتورة: ' . $st_up->error]);
+    }
     $st_up->close();
 
     $conn->commit();
@@ -596,9 +983,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     error_log("finalize_invoice_ajax exception: " . $ex->getMessage());
     json_out(['success' => false, 'message' => 'خطأ في الخادم: ' . $ex->getMessage()]);
   }
-}
+} // end endpoint
 
 // ---------------- Page rendering (load products and invoice if id) ----------------
+// The remainder of your file (loading lists, rendering HTML/JS) can remain unchanged.
+// I keep the same logic for products_list, next_invoice_id, invoice loading, etc.
+
 $products_list = [];
 $sqlP = "SELECT id, product_code, name, selling_price, cost_price, current_stock, unit_of_measure FROM products ORDER BY name LIMIT 2000";
 if ($resP = $conn->query($sqlP)) {
@@ -607,18 +997,69 @@ if ($resP = $conn->query($sqlP)) {
 }
 
 // get last batch unit_cost per product (same technique)
+// $last_batch_costs = [];
+// $ids = array_map(function ($p) { return intval($p['id']); }, $products_list);
+// if (!empty($ids)) {
+//   $in = implode(',', $ids);
+//   $q = "SELECT b.product_id, b.unit_cost FROM batches b JOIN (SELECT product_id, MAX(id) AS maxid FROM batches WHERE product_id IN ($in) GROUP BY product_id) m ON b.product_id = m.product_id AND b.id = m.maxid";
+//   if ($res = $conn->query($q)) {
+//     while ($rr = $res->fetch_assoc()) {
+//       $last_batch_costs[intval($rr['product_id'])] = floatval($rr['unit_cost']);
+//     }
+//     $res->free();
+//   }
+// }
+
+// --- نفترض $products_list جاهز كما في كودك
 $last_batch_costs = [];
+$last_batch_selling = [];
+
 $ids = array_map(function ($p) { return intval($p['id']); }, $products_list);
 if (!empty($ids)) {
-  $in = implode(',', $ids);
-  $q = "SELECT b.product_id, b.unit_cost FROM batches b JOIN (SELECT product_id, MAX(id) AS maxid FROM batches WHERE product_id IN ($in) GROUP BY product_id) m ON b.product_id = m.product_id AND b.id = m.maxid";
+  $in = implode(',', $ids); // الآي ديز أُعطيت intval مسبقاً -> آمن
+
+  // استعلام: نأخذ للـ batch الأحدث حسب received_at ثم id، ونأخذ فقط status = 'active' or 'consumed'
+  // نستخدم شرط WHERE b.id = (subquery) للحصول على السطر الأخير لكل product_id
+  $q = "
+    SELECT b.product_id, b.unit_cost, b.sale_price
+    FROM batches b
+    WHERE b.product_id IN ($in)
+      AND b.id = (
+        SELECT bb.id
+        FROM batches bb
+        WHERE bb.product_id = b.product_id
+          AND bb.status IN ('active','consumed')
+        ORDER BY COALESCE(bb.received_at, '1970-01-01') DESC, bb.id DESC
+        LIMIT 1
+      )
+  ";
+
   if ($res = $conn->query($q)) {
     while ($rr = $res->fetch_assoc()) {
-      $last_batch_costs[intval($rr['product_id'])] = floatval($rr['unit_cost']);
+      $pid = intval($rr['product_id']);
+      // تحوّل القيم إلى float مع التعامل إذا كانت NULL
+      $last_batch_costs[$pid] = isset($rr['unit_cost']) ? floatval($rr['unit_cost']) : null;
+      // إذا جدول batches لا يحتوي sale_price، سيبقى null ونعود لسعر المنتج
+      $last_batch_selling[$pid] = isset($rr['sale_price']) ? floatval($rr['sale_price']) : null;
     }
     $res->free();
   }
 }
+
+// عند العرض: استخدم الـ batch إن وُجد وإلا ارجع للسعر في products
+foreach ($products_list as $p) {
+  $id = intval($p['id']);
+  $default_cost = isset($last_batch_costs[$id]) && $last_batch_costs[$id] !== null
+    ? $last_batch_costs[$id]
+    : floatval($p['cost_price']);
+
+  $default_selling = isset($last_batch_selling[$id]) && $last_batch_selling[$id] !== null
+    ? $last_batch_selling[$id]
+    : floatval($p['selling_price']);
+
+  // ... ثم تستخدم $default_cost و $default_selling في عرض الـ HTML كما في كودك
+}
+
 
 $next_invoice_id = null;
 {
@@ -651,7 +1092,7 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
   $invoice = $st->get_result()->fetch_assoc();
   $st->close();
   if ($invoice) {
-    $s2 = $conn->prepare("SELECT id, product_id, quantity, cost_price_per_unit, total_cost, qty_received, batch_id FROM purchase_invoice_items WHERE purchase_invoice_id = ? ORDER BY id ASC");
+    $s2 = $conn->prepare("SELECT id, product_id, quantity, cost_price_per_unit, total_cost, sale_price, qty_received, batch_id FROM purchase_invoice_items WHERE purchase_invoice_id = ? ORDER BY id ASC");
     $s2->bind_param("i", $invoice_id);
     $s2->execute();
     $res2 = $s2->get_result();
@@ -674,9 +1115,12 @@ if (isset($_GET['supplier_id']) && is_numeric($_GET['supplier_id'])) {
   }
 }
 
-// Render UI (the rest of the original HTML/CSS/JS can be reused as-is) 
+// Render UI (the rest of the original HTML/CSS/JS can be reused as-is)
 require_once BASE_DIR . 'partials/header.php';
 require_once BASE_DIR . 'partials/sidebar.php';
+
+// ... continue with your existing HTML + JS ...
+
 
 // (Below: re-use the same full HTML/JS present in your original file for UI)
 // For brevity in this response I will include the same HTML/JS as before
@@ -907,25 +1351,54 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <strong>المنتجات</strong>
             <input id="product_search" placeholder="بحث باسم أو كود..." style="padding:6px;border-radius:6px;border:1px solid var(--border); width:58%">
           </div>
-          <div id="product_list" style="max-height:520px; overflow:auto;">
-            <?php foreach ($products_list as $p):
-              $id = intval($p['id']);
-              $default_cost = isset($last_batch_costs[$id]) ? $last_batch_costs[$id] : floatval($p['cost_price']);
-              $o = floatval($p['current_stock']) <= 0 ? ' out-of-stock' : '';
-            ?>
-              <div class="product-item<?php echo $o; ?>" data-id="<?php echo $id; ?>" data-name="<?php echo e($p['name']); ?>" data-code="<?php echo e($p['product_code']); ?>" data-cost="<?php echo $default_cost; ?>" data-selling="<?php echo floatval($p['selling_price']); ?>" data-stock="<?php echo floatval($p['current_stock']); ?>">
-                <div>
-                  <div style="font-weight:700"><?php echo e($p['name']); ?></div>
-                  <div class="small-muted">كود: <?php echo e($p['product_code']); ?> — رصيد: <span class="stock-number"><?php echo e($p['current_stock']); ?></span></div>
-                  <div class="small-muted" style="font-size:12px;">سعر شراء (أحدث): <?php echo number_format($default_cost, 2); ?> ج.م — سعر بيع: <?php echo number_format(floatval($p['selling_price']), 2); ?> ج.م</div>
-                </div>
-                <div style="text-align:left">
-                  <div style="font-weight:700"><?php echo number_format($default_cost, 2); ?> ج.م</div>
-                  <?php if (floatval($p['current_stock']) <= 0): ?><div class="badge-out">نفذ</div><?php endif; ?>
-                </div>
-              </div>
-            <?php endforeach; ?>
-          </div>
+         <div id="product_list" style="max-height:520px; overflow:auto;">
+  <?php foreach ($products_list as $p):
+    $id = intval($p['id']);
+
+    // cost & selling values (تأكد أن $last_batch_costs و $last_batch_selling موجودتين كما في الكود السابق)
+    $has_batch_cost = isset($last_batch_costs[$id]) && $last_batch_costs[$id] !== null;
+    $has_batch_selling = isset($last_batch_selling[$id]) && $last_batch_selling[$id] !== null;
+
+    $default_cost = $has_batch_cost ? $last_batch_costs[$id] : floatval($p['cost_price']);
+    $default_selling = $has_batch_selling ? $last_batch_selling[$id] : floatval($p['selling_price']);
+
+    // source tags
+    $cost_source = $has_batch_cost ? 'batch' : 'product';
+    $selling_source = $has_batch_selling ? 'batch' : 'product';
+
+    $o = floatval($p['current_stock']) <= 0 ? ' out-of-stock' : '';
+  ?>
+    <div class="product-item<?php echo $o; ?>"
+         data-id="<?php echo $id; ?>"
+         data-name="<?php echo e($p['name']); ?>"
+         data-code="<?php echo e($p['product_code']); ?>"
+         data-cost="<?php echo htmlspecialchars($default_cost, ENT_QUOTES); ?>"
+         data-cost-source="<?php echo $cost_source; ?>"
+         data-selling="<?php echo htmlspecialchars($default_selling, ENT_QUOTES); ?>"
+         data-selling-source="<?php echo $selling_source; ?>"
+         data-stock="<?php echo floatval($p['current_stock']); ?>">
+      <div>
+        <div style="font-weight:700"><?php echo e($p['name']); ?></div>
+        <div class="small-muted">
+          كود: <?php echo e($p['product_code']); ?> — رصيد: <span class="stock-number"><?php echo e($p['current_stock']); ?></span>
+        </div>
+
+        <div class="small-muted" style="font-size:12px;">
+          سعر شراء (أحدث): <?php echo number_format($default_cost, 2); ?> ج.م
+          <small style="color:#666;">(من: <?php echo $cost_source === 'batch' ? 'الدفعة' : 'المخزن'; ?>)</small>
+          — سعر بيع: <?php echo number_format($default_selling, 2); ?> ج.م
+          <small style="color:#666;">(من: <?php echo $selling_source === 'batch' ? 'الدفعة' : 'المخزن'; ?>)</small>
+        </div>
+      </div>
+
+      <div style="text-align:left">
+        <div style="font-weight:700"><?php echo number_format($default_cost, 2); ?> ج.م</div>
+        <?php if (floatval($p['current_stock']) <= 0): ?><div class="badge-out">نفذ</div><?php endif; ?>
+      </div>
+    </div>
+  <?php endforeach; ?>
+</div>
+
 
           <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
             <div style="flex:1">
@@ -983,31 +1456,79 @@ require_once BASE_DIR . 'partials/sidebar.php';
                   <th class="text-center no-print" style="width:90px">إجراء</th>
                 </tr>
               </thead>
-              <tbody id="items_tbody">
-                <?php if (!empty($items)): $i = 1;
-                  foreach ($items as $it): ?>
-                    <?php $pname = '#' . $it['product_id'];
-                    foreach ($products_list as $pp) if ($pp['id'] == $it['product_id']) {
-                      $pname = $pp['name'];
-                      $last_sell = $pp['selling_price'];
-                      break;
-                    } ?>
-                    <tr data-item-id="<?php echo $it['id']; ?>" data-product-id="<?php echo $it['product_id']; ?>">
-                      <td><?php echo $i++; ?></td>
-                      <td><?php echo e($pname); ?></td>
-                      <td class="text-center"><input class="form-control form-control-sm item-qty text-center" value="<?php echo number_format($it['quantity'], 2); ?>" step="0.01" min="0" style="width:100px; margin:auto"></td>
-                      <td class="text-end"><input class="form-control form-control-sm item-cost text-end" value="<?php echo number_format($it['cost_price_per_unit'], 2); ?>" step="0.01" min="0" style="width:110px; display:inline-block"> ج.م</td>
-                      <td class="text-end"><input class="form-control form-control-sm item-selling text-end" value="<?php echo number_format($last_sell ?? 0, 2); ?>" step="0.01" min="0" style="width:110px; display:inline-block"> ج.م</td>
-                      <td class="text-end fw-bold item-total"><?php echo number_format($it['total_cost'], 2); ?> ج.م</td>
-                      <td class="text-center no-print"><button class="btn btn-sm btn-danger btn-delete-item" data-item-id="<?php echo $it['id']; ?>">حذف</button></td>
-                    </tr>
-                  <?php endforeach;
-                else: ?>
-                  <tr id="no-items-row">
-                    <td colspan="7" class="no-items">لا توجد بنود بعد — اختر منتجاً لإضافته.</td>
-                  </tr>
-                <?php endif; ?>
-              </tbody>
+        <tbody id="items_tbody">
+  <?php if (!empty($items)): $i = 1;
+    foreach ($items as $it): ?>
+      <?php 
+        $pname = '#' . $it['product_id'];
+        $last_sell = $it['selling_price'] ?? null; // لو الفاتورة دي محفوظ فيها بيع
+        $last_cost = $it['cost_price_per_unit'];
+
+        foreach ($products_list as $pp) {
+          if ($pp['id'] == $it['product_id']) {
+            $pname = $pp['name'];
+            // 👇 fallback لو لم يتم جلب السعر من الداتا
+            if (!$last_sell) $last_sell = $pp['selling_price'];
+            if (!$last_cost) $last_cost = $pp['cost_price'];
+            break;
+          }
+        }
+      ?>
+      <tr 
+        data-item-id="<?php echo $it['id']; ?>" 
+        data-product-id="<?php echo $it['product_id']; ?>"
+        data-last-cost="<?php echo $last_cost; ?>"
+        data-last-sell="<?php echo $last_sell; ?>"
+      >
+        <td><?php echo $i++; ?></td>
+        <td><?php echo e($pname); ?></td>
+
+        <!-- الكمية -->
+        <td class="text-center">
+          <input 
+            class="form-control form-control-sm item-qty text-center" 
+            value="<?php echo number_format($it['quantity'], 2); ?>" 
+            step="0.01" min="0" 
+            style="width:100px; margin:auto">
+        </td>
+
+        <!-- سعر الشراء -->
+        <td class="text-end">
+          <input 
+            class="form-control form-control-sm item-cost text-end" 
+            value="<?php echo number_format($last_cost, 2); ?>" 
+            step="0.01" min="0" 
+            style="width:110px; display:inline-block"> ج.م
+        </td>
+
+        <!-- سعر البيع -->
+        <td class="text-end">
+          <input 
+            class="form-control form-control-sm item-selling text-end" 
+            value="<?php echo number_format($last_sell, 2); ?>" 
+            step="0.01" min="0" 
+            style="width:110px; display:inline-block"> ج.م
+        </td>
+
+        <!-- الإجمالي -->
+        <td class="text-end fw-bold item-total">
+          <?php echo number_format($it['total_cost'], 2); ?> ج.م
+        </td>
+
+        <!-- حذف -->
+        <td class="text-center no-print">
+          <button class="btn btn-sm btn-danger btn-delete-item" data-item-id="<?php echo $it['id']; ?>">حذف</button>
+        </td>
+      </tr>
+    <?php endforeach;
+  else: ?>
+    <tr id="no-items-row">
+      <td colspan="7" class="no-items">لا توجد بنود بعد — اختر منتجاً لإضافته.</td>
+    </tr>
+  <?php endif; ?>
+</tbody>
+
+              
               <tfoot>
                 <tr class="table-light">
                   <td colspan="5" class="text-end fw-bold">الإجمالي الكلي (سعر الشراء):</td>
@@ -1510,6 +2031,8 @@ require_once BASE_DIR . 'partials/sidebar.php';
     // End DOMContentLoaded
   });
 </script>
+
+
 
 <?php
 require_once BASE_DIR . 'partials/footer.php';

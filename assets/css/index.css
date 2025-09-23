@@ -69,7 +69,7 @@
 ::-webkit-scrollbar-track { background: var(--surface); }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 8px;
+  border-radius: var(--r);
   border: 2px solid var(--surface);
   transition: background var(--fast);
 }
