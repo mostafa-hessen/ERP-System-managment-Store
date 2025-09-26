@@ -6,6 +6,7 @@ $user = "admin";
 $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 
+
 <!-- الهيدر -->
 <header class="main-header">
 

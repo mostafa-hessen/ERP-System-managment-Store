@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/print_invoice.css" media="print">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/index.css" >
+    <!-- <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/products.css" > -->
 
        <?php if (!empty($page_css)): ?>
         <!-- CSS خاص بالصفحة -->

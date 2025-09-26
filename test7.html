@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>نماذج — إدارة المنتجات والدفعات (Prototype)</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+:root {
+  /* base palette */
+  --primary: #0b84ff;
+  --primary-600: #0a6be0;
+  --primary-700: #0a58c8;
+
+  --accent: #7c3aed;       /* purple */
+  --accent-600: #6d28d9;
+  --teal: #10b981;
+  --amber: #f59e0b;
+  --rose: #ef4444;
+  --const-white: #ffffff;
+  --bg: #f6f8fc;
+  --surface: #ffffff;
+  --surface-2: #f9fbff;
+  --text: #0f172a;
+  --text-soft: #334155;
+  --muted: #64748b;
+  --border: rgba(2,6,23,0.08);
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+
+  --shadow-1: 0 10px 24px rgba(15,23,42,0.06);
+  --shadow-2: 0 12px 28px rgba(11,132,255,0.14);
+  --ring: 0 0 0 4px rgba(11,132,255,0.18);
+
+  --fast: .15s ease;
+  --normal: .25s cubic-bezier(.2,.8,.2,1);
+
+  --grad-1: linear-gradient(135deg, var(--primary), var(--accent));
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter, 'Noto Naskh Arabic', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+.wrap{max-width:1180px;margin:28px auto;padding:22px}
+.header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:56px;height:56px;border-radius:12px;background:var(--grad-1);display:flex;align-items:center;justify-content:center;color:var(--const-white);font-weight:700;box-shadow:var(--shadow-2)}
+.h-title{font-size:18px;font-weight:700}
+.h-sub{font-size:13px;color:var(--muted)}
+.controls{display:flex;gap:10px;align-items:center}
+.input{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);min-width:220px}
+.btn{padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text-soft)}
+.btn-primary{background:var(--grad-1);color:var(--const-white);box-shadow:var(--shadow-2)}
+
+.grid{display:grid;grid-template-columns:1fr 420px;gap:18px;margin-top:18px}
+@media (max-width:1000px){ .grid{grid-template-columns:1fr} }
+.card{background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-1)}
+.summary{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.stat{padding:12px;border-radius:12px;background:linear-gradient(180deg, rgba(11,132,255,0.05), rgba(124,58,237,0.03));min-width:160px}
+.stat .lbl{font-size:12px;color:var(--muted)}
+.stat .val{font-size:18px;font-weight:700;margin-top:6px}
+
+.table{width:100%;border-collapse:collapse;margin-top:12px}
+.table th,.table td{padding:12px;text-align:center;border-bottom:1px solid var(--border)}
+.table th{font-size:13px;color:var(--muted);background:transparent}
+.row-actions button{margin-left:6px}
+.badge{padding:6px 10px;border-radius:999px;font-weight:600}
+.badge.green{background:rgba(16,185,129,0.12);color:var(--teal)}
+.badge.orange{background:rgba(245,158,11,0.08);color:var(--amber)}
+.badge.red{background:rgba(239,68,68,0.08);color:var(--rose)}
+.small{font-size:13px;color:var(--text-soft)}
+
+.side .batches{display:flex;flex-direction:column;gap:8px}
+.batch-card{display:flex;justify-content:space-between;gap:8px;padding:10px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border)}
+.batch-info{display:flex;flex-direction:column;align-items:flex-end}
+.batch-meta{font-size:13px;color:var(--muted)}
+.batch-right{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.pill{padding:6px 10px;border-radius:999px;background:linear-gradient(180deg,rgba(0,0,0,0.02),transparent);font-weight:600}
+
+/* modals */
+.backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.45);display:none;align-items:center;justify-content:center;z-index:1200}
+.modal{width:920px;max-width:96%;background:var(--surface);padding:18px;border-radius:12px}
+.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.form-grid .full{grid-column:1/-1}
+@media (max-width:900px){ .form-grid{grid-template-columns:repeat(2,1fr)} }
+@media (max-width:600px){ .form-grid{grid-template-columns:1fr} }
+.input-sm{padding:8px;border-radius:8px;border:1px solid var(--border)}
+.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.note{font-size:13px;color:var(--muted)}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="brand">
+      <div class="logo">INV</div>
+      <div>
+        <div class="h-title">إدارة المنتجات والدفعات — نموذج</div>
+        <div class="h-sub">واجهة عرض/إدارة المنتجات والدفعات — الكمية من الدفعات فقط (FIFO عند البيع)</div>
+      </div>
+    </div>
+    <div class="controls">
+      <input id="q" class="input" placeholder="ابحث باسم المنتج أو الكود...">
+      <button id="exportBtn" class="btn btn-ghost">تصدير</button>
+      <button id="addProductBtn" class="btn btn-primary">إضافة منتج</button>
+    </div>
+  </div>
+
+  <div style="margin-top:12px" class="summary">
+    <div class="stat"><div class="lbl">إجمالي المنتجات</div><div id="totalProducts" class="val">-</div></div>
+    <div class="stat"><div class="lbl">إجمالي الكمية في المخزن</div><div id="totalUnits" class="val">-</div></div>
+    <div class="stat"><div class="lbl">قيمة المخزون (تقريبي)</div><div id="totalValue" class="val">- ج</div></div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>قائمة المنتجات</strong>
+        <div class="small">اضغط على اسم المنتج لعرض تفاصيله والدفعات على اليمين</div>
+      </div>
+
+      <table class="table" id="productsTable">
+        <thead>
+          <tr><th>#</th><th>كود</th><th>الاسم</th><th>الوحدة</th><th>رصيد</th><th>سعر بيع أساسي</th><th>آخر شراء</th><th>قيمة المخزون</th><th>إجراءات</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <aside class="side">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <strong id="detailName">اختر منتجًا</strong>
+            <div id="detailDesc" class="small">تفاصيل المنتج وستظهر الدفعات هنا عند الاختيار.</div>
+          </div>
+          <div>
+            <button id="addBatchBtn" class="btn btn-ghost">إضافة دفعة</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:10px">
+          <div class="small">إجمالي رصيد: <strong id="detailStock">-</strong></div>
+          <div class="small">متوسط تكلفة: <strong id="detailAvgCost">-</strong></div>
+          <div class="small">آخر سعر شراء: <strong id="detailLastCost">-</strong></div>
+        </div>
+
+        <div class="batches" id="batchesList">
+          <div class="note">لا توجد دفعات حتى الآن</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- Product Modal -->
+<div id="productModal" class="backdrop">
+  <div class="modal">
+    <h3 id="pModalTitle">إضافة منتج</h3>
+    <div class="hr"></div>
+    <form id="productForm">
+      <div class="form-grid">
+        <div><label>كود المنتج</label><input id="p_code" class="input-sm" required></div>
+        <div><label>اسم المنتج</label><input id="p_name" class="input-sm" required></div>
+        <div><label>الوحدة</label><input id="p_unit" class="input-sm" required></div>
+        <div><label>سعر التكلفة (مرجعي)</label><input id="p_cost" class="input-sm" type="number" step="0.01"></div>
+        <div><label>سعر البيع الأساسي</label><input id="p_sell" class="input-sm" type="number" step="0.01" required></div>
+        <div><label>حد إعادة الطلب</label><input id="p_reorder" class="input-sm" type="number"></div>
+        <div class="full"><label>وصف</label><textarea id="p_desc" class="input-sm" style="height:74px"></textarea></div>
+      </div>
+
+      <div class="actions">
+        <button type="button" onclick="closeModal('productModal')" class="btn btn-ghost">إلغاء</button>
+        <button type="submit" class="btn btn-primary">حفظ</button>
+      </div>
+      <div style="height:6px"></div>
+      <div class="note">ملاحظة: الحقول المرتبطة بالكمية أُلغيت — الكمية تُدار عبر الدفعات فقط.</div>
+    </form>
+  </div>
+</div>
+
+<!-- Batch Modal -->
+<div id="batchModal" class="backdrop">
+  <div class="modal">
+    <h3>إضافة دفعة</h3>
+    <form id="batchForm">
+      <div class="form-grid">
+        <div><label>الكمية</label><input id="b_qty" class="input-sm" type="number" step="0.0001" required></div>
+        <div><label>سعر الشراء لكل وحدة</label><input id="b_cost" class="input-sm" type="number" step="0.01" required></div>
+        <div><label>سعر البيع لهذه الدفعة (اختياري)</label><input id="b_sell" class="input-sm" type="number" step="0.01" placeholder="سعر البيع الأساسي ساري إذا ترك فارغ"></div>
+        <div><label>تاريخ الاستلام</label><input id="b_date" class="input-sm" type="date"></div>
+        <div><label>تاريخ الانتهاء</label><input id="b_expiry" class="input-sm" type="date"></div>
+        <div class="full"><label>ملاحظات</label><input id="b_notes" class="input-sm"></div>
+      </div>
+
+      <div class="actions">
+        <button type="button" onclick="closeModal('batchModal')" class="btn btn-ghost">إلغاء</button>
+        <button type="submit" class="btn btn-primary">إضافة الدفعة</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Batch Detail Modal -->
+<div id="batchDetailModal" class="backdrop">
+  <div class="modal">
+    <h3 id="bdTitle">تفاصيل الدفعة</h3>
+    <div id="bdBody"></div>
+    <div class="actions">
+      <button onclick="closeModal('batchDetailModal')" class="btn btn-ghost">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Demo data + UI logic (prototype) */
+let products = [
+  {id:1, code:'SKU-001', name:'مادة A', unit:'صندوق', base_sell:150.00, ref_cost:20.00, reorder:5, desc:'مادة خام'},
+  {id:2, code:'SKU-002', name:'مادة B', unit:'علبة', base_sell:200.00, ref_cost:85.00, reorder:3, desc:'منتج تجريبي'}
+];
+let batches = {
+  1: [ {id:1001, qty:10, remaining:0, unit_cost:20, sell_price:150, received_at:'2025-08-01', expiry:null, notes:'دفعة قديمة'}, {id:1002, qty:10, remaining:10, unit_cost:40, sell_price:160, received_at:'2025-09-01', expiry:null, notes:'توريد سبتمبر'} ],
+  2: [ {id:2001, qty:10, remaining:7, unit_cost:85, sell_price:200, received_at:'2025-07-01', expiry:null, notes:''} ]
+};
+
+const $ = id => document.getElementById(id);
+function formatNum(n){ return Number(n||0).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function syncStock(pid){ return (batches[pid]||[]).reduce((s,b)=> s + (Number(b.remaining)||0), 0); }
+function stockValue(pid){ return (batches[pid]||[]).reduce((s,b)=> s + (Number(b.remaining||0) * Number(b.unit_cost||0)), 0); }
+
+function renderProducts(){
+  const tbody = document.querySelector('#productsTable tbody'); tbody.innerHTML='';
+  products.forEach(p=>{
+    const stock = syncStock(p.id);
+    const value = stockValue(p.id);
+    const last = (batches[p.id]||[]).slice().sort((a,b)=> (a.received_at||'') < (b.received_at||'') ? 1 : -1)[0];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${p.id}</td>
+      <td class="monos">${p.code}</td>
+      <td style="text-align:right"><a href="#" class="prod-link" data-id="${p.id}">${p.name}</a><div class="small">${p.desc||''}</div></td>
+      <td>${p.unit}</td>
+      <td>${formatNum(stock)}</td>
+      <td>${formatNum(p.base_sell)}</td>
+      <td class="small">${last ? last.received_at : '-'}</td>
+      <td>${formatNum(value)}</td>
+      <td class="row-actions"><button class="btn btn-ghost" onclick="openEdit(${p.id})"> تعديل </button><button class="btn btn-ghost" onclick="openBatches(${p.id})"> دفعات </button><button class="btn btn-ghost" onclick="tryDelete(${p.id})"> حذف </button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  $('totalProducts').textContent = products.length;
+  const totalUnits = products.reduce((s,p)=> s + syncStock(p.id),0);
+  const totalValue = products.reduce((s,p)=> s + stockValue(p.id),0);
+  $('totalUnits').textContent = formatNum(totalUnits);
+  $('totalValue').textContent = formatNum(totalValue) + ' ج';
+  attachLinks();
+}
+
+function attachLinks(){ document.querySelectorAll('.prod-link').forEach(el=> el.addEventListener('click', e=>{ e.preventDefault(); const id=Number(el.dataset.id); showDetail(id); })); }
+
+let currentProduct = null;
+function showDetail(id){ currentProduct = products.find(p=>p.id===id); $('detailName').textContent = currentProduct.name + ' — ' + currentProduct.code; $('detailDesc').textContent = currentProduct.desc || '-'; renderBatchesList(id); }
+
+function renderBatchesList(productId){ const list = $('batchesList'); list.innerHTML=''; const arr = (batches[productId]||[]).slice().sort((a,b)=> (a.received_at||'') < (b.received_at||'') ? 1 : -1); if(!arr.length) return list.innerHTML = '<div class="note">لا توجد دفعات</div>';
+  arr.forEach(b=>{
+    const div = document.createElement('div'); div.className='batch-card';
+    div.innerHTML = `<div class="batch-info"><strong>دفعة #${b.id}</strong><div class="batch-meta">${b.received_at || '-'} • ${b.notes||''}</div></div>
+      <div class="batch-right">
+        <div class="pill">${formatNum(b.remaining)}/${formatNum(b.qty)}</div>
+        <div class="pill">سعر شراء: ${formatNum(b.unit_cost)}</div>
+        <div class="pill">سعر بيع: ${formatNum(b.sell_price)}</div>
+        <div style="display:flex;gap:8px;margin-top:6px"><button class="btn btn-ghost" onclick="viewBatch(${productId},${b.id})">تفاصيل</button></div>
+      </div>`;
+    list.appendChild(div);
+  });
+  // stats
+  const total = syncStock(productId);
+  const avg = arr.reduce((s,x)=> s + (x.remaining * x.unit_cost||0),0) / (arr.reduce((s,x)=> s + (x.remaining||0),0) || 1);
+  const last = arr.length ? arr[0].unit_cost : '-';
+  $('detailStock').textContent = formatNum(total);
+  $('detailAvgCost').textContent = isFinite(avg) ? formatNum(avg) : '-';
+  $('detailLastCost').textContent = arr.length ? formatNum(last) : '-';
+}
+
+// modal helpers
+function openModal(id){ $(id).style.display='flex'; }
+function closeModal(id){ $(id).style.display='none'; }
+
+// add product
+$('addProductBtn').addEventListener('click', ()=>{ $('pModalTitle').textContent='إضافة منتج'; $('productForm').reset(); openModal('productModal'); });
+
+function openEdit(id){ const p = products.find(x=>x.id===id); if(!p) return; $('pModalTitle').textContent='تعديل المنتج'; $('p_code').value=p.code; $('p_name').value=p.name; $('p_unit').value=p.unit; $('p_cost').value=p.ref_cost||''; $('p_sell').value=p.base_sell||''; $('p_reorder').value=p.reorder||''; $('p_desc').value=p.desc||''; openModal('productModal'); }
+
+$('productForm').addEventListener('submit', function(e){ e.preventDefault(); // prototype: update local array
+  const code=$('p_code').value.trim(); const name=$('p_name').value.trim(); const unit=$('p_unit').value.trim(); const cost=parseFloat($('p_cost').value)||0; const sell=parseFloat($('p_sell').value)||0; const reorder=parseInt($('p_reorder').value)||0; const desc=$('p_desc').value||'';
+  if(!code||!name||!unit) return alert('اكمل الحقول');
+  if($('pModalTitle').textContent.includes('تعديل')){
+    const p = products.find(x=>x.code===code || x.name===name); // simple match
+    if(p){ p.code=code; p.name=name; p.unit=unit; p.ref_cost=cost; p.base_sell=sell; p.reorder=reorder; p.desc=desc; }
+  } else {
+    const newId = products.length ? Math.max(...products.map(x=>x.id))+1 : 1; products.unshift({id:newId, code, name, unit, base_sell:sell, ref_cost:cost, reorder, desc});
+  }
+  closeModal('productModal'); renderProducts();
+});
+
+// batches modal
+$('addBatchBtn').addEventListener('click', ()=>{ if(!currentProduct) return alert('اختر منتج أولا'); $('batchForm').reset(); openModal('batchModal'); });
+$('batchForm').addEventListener('submit', function(e){ e.preventDefault(); if(!currentProduct) return alert('اختر منتج أولا'); const qty=parseFloat($('b_qty').value)||0; const cost=parseFloat($('b_cost').value)||0; const sell=parseFloat($('b_sell').value)||null; const date=$('b_date').value||new Date().toISOString().slice(0,10); const expiry=$('b_expiry').value||null; const notes=$('b_notes').value||''; if(qty<=0) return alert('كمية غير صحيحة'); const newId = Math.floor(Math.random()*900000)+1000; const b = {id:newId, qty, remaining:qty, unit_cost:cost, sell_price: sell || currentProduct.base_sell, received_at:date, expiry, notes}; batches[currentProduct.id]=batches[currentProduct.id]||[]; batches[currentProduct.id].push(b); closeModal('batchModal'); renderBatchesList(currentProduct.id); renderProducts(); alert('تم إضافة الدفعة (نموذج)'); });
+
+function viewBatch(pid,bid){ const arr=batches[pid]||[]; const b=arr.find(x=>x.id===bid); if(!b) return; openModal('batchDetailModal'); const body = $('bdBody'); body.innerHTML = `<table style="width:100%"><tbody><tr><td>معرّف</td><td>${b.id}</td></tr><tr><td>كمية</td><td>${formatNum(b.qty)}</td></tr><tr><td>متبقي</td><td>${formatNum(b.remaining)}</td></tr><tr><td>سعر شراء</td><td>${formatNum(b.unit_cost)}</td></tr><tr><td>سعر بيع دفعة</td><td>${formatNum(b.sell_price)}</td></tr><tr><td>تاريخ استلام</td><td>${b.received_at}</td></tr><tr><td>تاريخ انتهاء</td><td>${b.expiry||'-'}</td></tr><tr><td>ملاحظات</td><td>${b.notes||'-'}</td></tr></tbody></table>`; }
+
+function openBatches(id){ showDetail(id); }
+
+function tryDelete(id){ // check if batches exist
+  const has = (batches[id]||[]).length>0;
+  if(has) return alert('لا يمكن حذف المنتج: يوجد دفعات مرتبطة');
+  if(!confirm('تأكيد حذف المنتج؟')) return; products = products.filter(p=>p.id!==id); delete batches[id]; renderProducts(); }
+
+renderProducts();
+
+/* تنفيذ FIFO في بيئة حقيقية
+ - عند تنفيذ عملية بيع: الخادم يجب أن يجري عملية داخل معاملة DB. 
+ - الخادم يستدعي SELECT ... FOR UPDATE على دفعات المنتج المرتبة بـ received_at ASC ثم يستهلك الكمية تدريجيا.
+ - بعد نجاح البيع: يُخزَّن allocations ويُحدَّث remaining لكل دفعة، ثم يُحدَّث products.current_stock تلقائياً (إن اخترت الحقل المُخزن).
+*/
+
+</script>
+</body>
+</html>

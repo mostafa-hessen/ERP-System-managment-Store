@@ -352,7 +352,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   box-shadow: var(--shadow-1);
 }
 
-[data-app] .table thead th {
+/* [data-app] .table thead th {
   background: #f1f5f9;
   color: #0f172a;
   font-weight: 700;
@@ -367,14 +367,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 [data-app] .table tbody tr:hover {
   background: rgba(11,132,255,0.06);
-}
+} */
 
 /* الوضع الداكن (Dark) */
-[data-app][data-theme="dark"] .table {
+/* [data-app][data-theme="dark"] .table {
   background: #0f162d;
   color: #e5e7eb;
   border: 1px solid rgba(255,255,255,0.08);
-}
+} */
 
 [data-app][data-theme="dark"] .table thead th {
   background: #1e293b;   /* هيدر أغمق */
@@ -556,3 +556,8 @@ select option {
   from { opacity: 0; transform: translateY(-10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+
+
+
+
