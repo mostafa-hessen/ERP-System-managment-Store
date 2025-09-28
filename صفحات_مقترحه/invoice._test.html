@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mockup - واجهة الفاتورة (تصوُّر نهائي)</title>
+  <style>
+    :root{--bg:#0f1720;--panel:#0b1220;--muted:#9aa6b2;--accent:#0ea5a4;--danger:#ef4444;--success:#10b981;--card:#0e1a26}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071124 0%, #081222 100%);font-family: "Segoe UI", Tahoma, Arial, sans-serif;color:#e6eef6}
+    .app{display:flex;gap:18px;padding:18px;box-sizing:border-box}
+    .col{background:var(--card);border-radius:10px;padding:12px;flex:1;min-width:260px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    .col.customers{flex:0.9;max-width:320px}
+    .col.center{flex:1.3;min-width:520px}
+    .col.products{flex:1}
+
+    /* header for table (center column) */
+    .center-head{display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+    .center-head h2{margin:0;font-size:18px}
+
+    .btn{padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;cursor:pointer}
+    .btn.primary{background:linear-gradient(90deg,var(--accent),#06b6d4);border:none;color:#04202a}
+    .btn.ghost{background:transparent}
+    .btn.success{background:var(--success);color:#042022;border:none}
+    .btn.danger{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--danger)}
+
+    .selected{box-shadow:0 0 0 2px rgba(14,165,164,0.12);border-radius:6px}
+
+    /* customer list */
+    #customer_list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;padding-right:4px}
+    .customer-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.015),transparent)}
+    .customer-item.disabled{opacity:0.6}
+    .small-muted{color:var(--muted);font-size:12px}
+    #selectedCustomerBox{background:linear-gradient(90deg, rgba(14,165,164,0.06), transparent);padding:8px;border-radius:6px}
+
+    /* invoice items table */
+    table.invoice{width:100%;border-collapse:collapse}
+    table.invoice thead th{text-align:center;padding:8px;background:transparent;border-bottom:1px solid rgba(255,255,255,0.04)}
+    table.invoice tbody td{padding:8px;border-bottom:1px solid rgba(255,255,255,0.03)}
+    .item-row.out-of-stock{background:linear-gradient(90deg, rgba(239,68,68,0.06), transparent)}
+    .item-actions .delete{color:var(--danger);border:none;padding:6px}
+
+    /* product list */
+    #product_list{display:grid;grid-template-columns:1fr;gap:8px;max-height:560px;overflow:auto}
+    .product-card{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent)}
+    .badge{font-size:12px;padding:4px 8px;border-radius:999px}
+    .badge.green{background:rgba(16,185,129,0.12);color:var(--success)}
+    .badge.orange{background:rgba(249,115,22,0.08);color:orange}
+    .badge.gray{background:rgba(148,163,184,0.06);color:var(--muted)}
+
+    /* dialog/backdrops */
+    .backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.6);display:flex;align-items:center;justify-content:center;z-index:60}
+    .dialog{background:var(--panel);padding:16px;border-radius:10px;min-width:320px;max-width:760px;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
+    .dialog h3{margin-top:0}
+    .form-group{display:flex;flex-direction:column;gap:8px}
+    .note-box{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+
+    /* confirm preview */
+    .modal-preview{max-height:220px;overflow:auto;border-top:1px solid rgba(255,255,255,0.03);padding-top:8px;margin-top:8px}
+    .modal-item{display:flex;justify-content:space-between;align-items:center;padding:6px}
+
+    /* toast */
+    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#0b1220;padding:10px 14px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.6);z-index:80;border-left:4px solid var(--accent)}
+
+    /* print view (hidden iframe) */
+    @media print{body *{visibility:hidden}#printArea, #printArea *{visibility:visible}#printArea{position:fixed;left:0;top:0;width:100%}}
+
+    /* responsive */
+    @media (max-width:980px){.app{flex-direction:column}.col{max-width:100%}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Customers column -->
+    <div class="col customers">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong>العملاء</strong>
+        <div style="display:flex;gap:6px">
+          <button type="button" id="openAddCustomerDialog" class="btn ghost">إضافة</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:8px;display:flex;gap:6px;align-items:center">
+        <input type="text" id="customer_search" placeholder="ابحث باسم أو موبايل..." style="padding:6px;border:1px solid #ddd;border-radius:6px;width:100%">
+      </div>
+
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+        <button type="button" id="cashCustomerBtn" class="btn selected">نقدي (ثابت)</button>
+        <div id="selectedCustomerBox" class="small-muted" style="display:block;margin-top:6px"></div>
+        <div class="small-muted">اضغط على "اختر" عند العميل لتحديده، أو استخدم "نقدي (ثابت)" لوضع العميل النقدي مباشرة في الفاتورة.</div>
+      </div>
+
+      <div id="customer_list" style="margin-top:10px"></div>
+    </div>
+
+    <!-- Center column (invoice) -->
+    <div class="col center">
+      <div class="center-head"><h2>فاتورة جديدة</h2></div>
+
+      <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div><strong>عميل محدد:</strong> <span id="topSelectedCustomer">عميل نقدي</span></div>
+        <div style="display:flex;gap:8px">
+          <button id="btnCompleteInvoice" class="btn primary">إتمام الفاتورة</button>
+          <button id="btnPrint" class="btn ghost">طباعة بدون ملاحظات</button>
+        </div>
+      </div>
+
+      <table class="invoice">
+        <thead>
+          <tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th>حذف</th></tr>
+        </thead>
+        <tbody id="invoice_items_body"></tbody>
+      </table>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <div class="small-muted">اضغط على حذف لحذف بند. سيظهر تحذير إن الكمية أكبر من المتاح.</div>
+        <div><strong>الإجمالي:</strong> <span id="invoice_total">0.00</span> ج.م</div>
+      </div>
+    </div>
+
+    <!-- Products column -->
+    <div class="col products">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong>المنتجات</strong>
+      </div>
+      <div id="product_list"></div>
+    </div>
+  </div>
+
+  <!-- Add Customer Dialog (avoid 'modal' naming) -->
+  <div id="addCustomerDialogBackdrop" class="backdrop" style="display:none">
+    <div class="dialog">
+      <h3>إضافة عميل جديد</h3>
+      <div id="addCustMsg" class="small-muted"></div>
+      <div class="form-group">
+        <input id="new_name" placeholder="الاسم" class="note-box">
+        <input id="new_mobile" placeholder="رقم الموبايل (11 رقم)" class="note-box">
+        <input id="new_city" placeholder="المدينة" class="note-box">
+        <input id="new_address" placeholder="العنوان" class="note-box">
+        <textarea id="new_notes" placeholder="ملاحظات عن العميل (اختياري)" class="note-box" rows="3"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <button id="closeAddCust" type="button" class="btn ghost">إلغاء</button>
+          <button id="submitAddCust" type="button" class="btn primary">حفظ وإختيار</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Dialog -->
+  <div id="confirmDialogBackdrop" class="backdrop" style="display:none">
+    <div class="dialog">
+      <h3>تأكيد إتمام الفاتورة</h3>
+      <div id="confirmClientPreview" class="cust-preview small-muted"></div>
+      <div id="confirmItemsPreview" class="modal-preview"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <div>
+          <button id="confirmCancel" class="btn ghost">إلغاء</button>
+          <button id="confirmSend" class="btn success">تأكيد وإرسال</button>
+        </div>
+        <div><strong>الإجمالي:</strong> <span id="confirm_total_before">0.00</span> ج.م</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batches Dialog -->
+  <div id="batchesDialogBackdrop" class="backdrop" style="display:none">
+    <div class="dialog">
+      <h3>تفاصيل الدفعات (FIFO)</h3>
+      <div id="batchesContent"></div>
+      <div style="margin-top:12px;text-align:left">
+        <button id="closeBatches" class="btn ghost">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" style="display:none"></div>
+
+  <!-- Hidden print area -->
+  <div id="printArea" style="display:none"></div>
+
+  <script>
+    // Sample data (simulate server data)
+    const customers = [
+      {id:0,name:'عميل نقدي',mobile:'',city:'',address:'',notes:'',isCash:true},
+      {id:72,name:'العربي',mobile:'01157787321',city:'Fayoum',address:'Sheikh Yusuf ST, Fayoum, Egypt',notes:'متكرر'},
+      {id:71,name:'احمد',mobile:'01115473776',city:'مدابغ',address:'',notes:''},
+      {id:15,name:'Mostafa Hussien Ramadan',mobile:'01157787111',city:'Fayoum',address:'',notes:''}
+    ];
+
+    const products = [
+      {id:1,sku:'P-1',title:'mm',default_price:100.00,batches:[{id:101,qty:10,price:90,last_sale:100,active:true,date:'2025-09-01'},{id:102,qty:2,price:95,last_sale:95,active:false,date:'2025-08-01'}]},
+      {id:2,sku:'P-2',title:'اختبار بعد التعديلش 1',default_price:20.00,batches:[{id:201,qty:5,price:20,last_sale:20,active:true,date:'2025-09-10'}]}
+    ];
+
+    let selectedCustomer = customers[0]; // default cash customer fixed at top
+    let invoiceItems = [];
+
+    /* Utility */
+    function $(id){return document.getElementById(id)}
+    function showToast(msg,timeout=2600){const t=$('toast');t.innerText=msg;t.style.display='block';setTimeout(()=>t.style.display='none',timeout)}
+
+    /* Customers */
+    function renderCustomers(filter=''){
+      const list = $('customer_list');list.innerHTML='';
+      customers.forEach(c=>{
+        if(filter && ! (c.name.includes(filter) || (c.mobile||'').includes(filter))) return;
+        const el=document.createElement('div');el.className='customer-item'+(c.isCash?'':'');el.dataset.cid=c.id;
+        el.innerHTML = `<div><div style='font-weight:700'>${escapeHtml(c.name)}</div><div class='small-muted'>${c.mobile?c.mobile+' — '+c.city:c.city}</div></div><div style='min-width:80px'><button type='button' class='btn ghost choose-cust'>اختر</button></div>`;
+        list.appendChild(el);
+        el.querySelector('.choose-cust').addEventListener('click',()=>{selectCustomer(c.id)});
+      })
+    }
+
+    function selectCustomer(id){
+      selectedCustomer = customers.find(x=>x.id===id) || customers[0];
+      $('selectedCustomerBox').innerHTML = `<div>العميل الحالي: <strong>${escapeHtml(selectedCustomer.name)}</strong></div><div style='margin-top:6px'><button id='btnUnselectCustomer' type='button' class='btn ghost'>إلغاء اختيار العميل</button></div>`;
+      $('topSelectedCustomer').innerText = selectedCustomer.name;
+      const btn = $('btnUnselectCustomer'); if(btn){btn.addEventListener('click',unselectCustomer)}
+      // disable all choose buttons visually like old app
+      document.querySelectorAll('#customer_list .choose-cust').forEach(b=>b.disabled=true);
+      showToast('تم اختيار العميل: '+selectedCustomer.name);
+    }
+
+    function unselectCustomer(){
+      selectedCustomer = customers[0];
+      renderSelectedCustomerBox();
+      document.querySelectorAll('#customer_list .choose-cust').forEach(b=>b.disabled=false);
+      $('topSelectedCustomer').innerText = selectedCustomer.name;
+      showToast('تم إلغاء اختيار العميل');
+    }
+
+    function renderSelectedCustomerBox(){
+      $('selectedCustomerBox').innerHTML = `<div>العميل الحالي: <strong>${escapeHtml(selectedCustomer.name)}</strong></div><div style='margin-top:6px'><button id='btnUnselectCustomer' type='button' class='btn ghost'>إلغاء اختيار العميل</button></div>`;
+      const btn = $('btnUnselectCustomer'); if(btn) btn.addEventListener('click',unselectCustomer);
+    }
+
+    /* Add customer dialog */
+    $('openAddCustomerDialog').addEventListener('click',()=>{$('addCustomerDialogBackdrop').style.display='flex'});
+    $('closeAddCust').addEventListener('click',()=>{$('addCustomerDialogBackdrop').style.display='none'});
+    $('submitAddCust').addEventListener('click',()=>{
+      const name=$('new_name').value.trim(); const mobile=$('new_mobile').value.trim();
+      if(!name){$('addCustMsg').innerText='الاسم مطلوب';return;} if(mobile && mobile.length<11){$('addCustMsg').innerText='الموبايل يجب أن يكون 11 رقم';return;}
+      const id = Math.max(...customers.map(c=>c.id))+1;
+      const newC={id,name,mobile,city:$('new_city').value.trim(),address:$('new_address').value.trim(),notes:$('new_notes').value.trim(),isCash:false};
+      customers.push(newC);$('addCustomerDialogBackdrop').style.display='none';$('new_name').value='';$('new_mobile').value='';renderCustomers();selectCustomer(newC.id);
+    });
+
+    /* Products */
+    function renderProducts(){
+      const list=$('product_list');list.innerHTML='';
+      products.forEach(p=>{
+        const totalQty = p.batches.reduce((s,b)=>s+b.qty,0);
+        const el=document.createElement('div');el.className='product-card';
+        el.innerHTML = `<div><div style='font-weight:700'>${escapeHtml(p.title)}</div><div class='small-muted'>${p.sku} — المتاح: ${totalQty}</div></div><div style='display:flex;gap:8px;align-items:center'><span class='badge ${totalQty>5?"green":"orange"}'>${totalQty>0?"متاح":"منفذ"}</span><button class='btn ghost view-batches'>دفعات</button><button class='btn primary add-product'>أضف</button></div>`;
+        list.appendChild(el);
+        el.querySelector('.view-batches').addEventListener('click',()=>openBatchesDialog(p));
+        el.querySelector('.add-product').addEventListener('click',()=>addProductToInvoice(p));
+      })
+    }
+
+    function openBatchesDialog(product){
+      const container=$('batchesContent');container.innerHTML='';
+      // show FIFO - last row is oldest first when listing
+      const rows = product.batches.slice().sort((a,b)=> new Date(a.date) - new Date(b.date));
+      rows.forEach(b=>{
+        const taken = (b.taken||0);
+        const remaining = Math.max(0, b.qty - taken);
+        const statusClass = b.active? 'green' : (remaining===0? 'gray' : 'orange');
+        const el = document.createElement('div');
+        el.style.display='flex';el.style.justifyContent='space-between';el.style.padding='8px';el.style.borderBottom='1px solid rgba(255,255,255,0.03)';
+        el.innerHTML = `<div><strong>#${b.id}</strong> — ${b.date}<div class='small-muted'>السعر: ${b.price.toFixed(2)} — المبلغ المأخوذ: ${taken} — المتبقي: ${remaining}</div></div><div><span class='badge ${statusClass}'>${b.active? 'فعال':'غير فعال'}</span></div>`;
+        container.appendChild(el);
+      })
+      $('batchesDialogBackdrop').style.display='flex';
+    }
+    $('closeBatches').addEventListener('click',()=>{$('batchesDialogBackdrop').style.display='none'});
+
+    /* Invoice operations */
+    function addProductToInvoice(product){
+      // determine default sale price: last sale of last active batch else product default
+      const activeBatches = product.batches.filter(b=>b.active).sort((a,b)=>new Date(b.date)-new Date(a.date));
+      const defaultPrice = (activeBatches[0] && activeBatches[0].last_sale) ? activeBatches[0].last_sale : product.default_price;
+      // compute total available
+      const available = product.batches.reduce((s,b)=>s+b.qty,0);
+      const item = {pid:product.id,title:product.title,qty:1,price:defaultPrice,available};
+      invoiceItems.push(item);renderInvoiceItems();showToast('تم إضافة منتج: '+product.title);
+    }
+
+    function renderInvoiceItems(){
+      const body=$('invoice_items_body');body.innerHTML='';
+      invoiceItems.forEach((it,idx)=>{
+        const tr=document.createElement('tr');tr.className='item-row'+(it.qty>it.available? ' out-of-stock':'');
+        tr.innerHTML = `<td><strong>${escapeHtml(it.title)}</strong></td><td><input type='number' min='1' value='${it.qty}' data-idx='${idx}' class='note-box' style='width:72px'></td><td><input type='number' step='0.01' value='${it.price.toFixed(2)}' data-idx='${idx}' class='note-box' style='width:96px'></td><td class='item-total'>${(it.qty*it.price).toFixed(2)}</td><td class='item-actions'><button class='delete btn' data-idx='${idx}'>حذف</button></td>`;
+        body.appendChild(tr);
+      });
+      // attach events
+      document.querySelectorAll('#invoice_items_body input[type=number]').forEach(inp=>inp.addEventListener('change',onItemChange));
+      document.querySelectorAll('#invoice_items_body .delete').forEach(b=>b.addEventListener('click',onDeleteItem));
+      updateInvoiceTotal();
+    }
+
+    function onItemChange(e){
+      const idx = parseInt(e.target.dataset.idx); const val = Number(e.target.value);
+      if(e.target.type==='number'){ // qty or price
+        // decide which input: if width 72 => qty else price
+      }
+      const inputs = document.querySelectorAll(`#invoice_items_body input[data-idx='${idx}']`);
+      const qty = Number(inputs[0].value); const price = Number(inputs[1].value);
+      invoiceItems[idx].qty = qty; invoiceItems[idx].price = price;
+      renderInvoiceItems();
+    }
+
+    function onDeleteItem(e){
+      const idx = Number(e.target.dataset.idx); invoiceItems.splice(idx,1);renderInvoiceItems();
+    }
+
+    function updateInvoiceTotal(){
+      const total = invoiceItems.reduce((s,it)=> s + (it.qty*it.price), 0);
+      $('invoice_total').innerText = total.toFixed(2);
+    }
+
+    /* Complete invoice flow */
+    $('btnCompleteInvoice').addEventListener('click',()=>{
+      if(invoiceItems.length===0){ showToast('اختر بنودًا أولاً'); return; }
+      if(!selectedCustomer){ showToast('اختر عميل أولا'); return; }
+      // fill confirm preview
+      $('confirmClientPreview').innerHTML = `<p><strong>👤 العميل:</strong> ${escapeHtml(selectedCustomer.name)}</p><p class='small-muted'>📞 ${selectedCustomer.mobile||'-'} — 🏙️ ${selectedCustomer.city||'-'}<br>📍 ${selectedCustomer.address||'-'}</p>`;
+      const itemsCont = $('confirmItemsPreview'); itemsCont.innerHTML='';
+      invoiceItems.forEach(it=>{
+        const div = document.createElement('div');div.className='modal-item';div.innerHTML = `<div class='item-info'><strong>${escapeHtml(it.title)}</strong><div class='small-muted'>الكمية: ${it.qty} — سعر البيع: ${it.price.toFixed(2)}</div></div><div class='item-price'>${(it.qty*it.price).toFixed(2)}</div>`;
+        itemsCont.appendChild(div);
+      })
+      $('confirm_total_before').innerText = invoiceItems.reduce((s,i)=>s+i.qty*i.price,0).toFixed(2);
+      $('confirmDialogBackdrop').style.display='flex';
+    });
+
+    $('confirmCancel').addEventListener('click',()=>{$('confirmDialogBackdrop').style.display='none'});
+    $('confirmSend').addEventListener('click',()=>{
+      // simulate server create
+      const invoiceNumber = 'INV-'+Date.now();
+      $('confirmDialogBackdrop').style.display='none';
+      showToast('تم إضافة فاتورة رقم: '+invoiceNumber,4000);
+      // show post create actions via small floating dialog
+      setTimeout(()=>{
+        const r = confirm('فاتورة '+invoiceNumber+' تم إنشاؤها. هل تريد إنشاء فاتورة جديدة (OK) أم الذهاب لصفحة الفواتير (Cancel)?');
+        if(r){ // new invoice
+          invoiceItems = []; selectedCustomer = customers[0]; renderInvoiceItems(); renderSelectedCustomerBox(); $('topSelectedCustomer').innerText = selectedCustomer.name;
+        } else {
+          // go to invoices page (example)
+          window.location.href = './delivered_invoices.php';
+        }
+      },500);
+    });
+
+    /* Print without notes */
+    $('btnPrint').addEventListener('click',()=>{
+      const printable = document.getElementById('printArea'); printable.style.display='block'; printable.innerHTML = `<div style='padding:20px;color:#000;background:#fff;'>`+
+        `<h3>فاتورة</h3><div>العميل: ${escapeHtml(selectedCustomer.name)}</div><div>الموبايل: ${selectedCustomer.mobile||''}</div><div>العنوان: ${selectedCustomer.address||''}</div><hr>`+
+        `<table style='width:100%;border-collapse:collapse;color:#000'><thead><tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>`+
+        invoiceItems.map(i=>`<tr><td>${escapeHtml(i.title)}</td><td>${i.qty}</td><td>${i.price.toFixed(2)}</td><td>${(i.qty*i.price).toFixed(2)}</td></tr>`).join('')+
+        `</tbody></table><hr><div><strong>الإجمالي:</strong> ${invoiceItems.reduce((s,i)=>s+i.qty*i.price,0).toFixed(2)} ج.م</div></div>`;
+      const w = window.open('','printWindow'); w.document.write(printable.innerHTML); w.document.close(); w.print();
+    });
+
+    /* helpers */
+    function escapeHtml(text){ if(!text) return ''; return text.replace(/[&"'<>]/g, c=>({'&':'&amp;','"':'&quot;',"'":'&#39;','<':'&lt;','>':'&gt;'})[c]); }
+
+    // initial render
+    renderCustomers();renderSelectedCustomerBox();renderProducts();renderInvoiceItems();
+
+    // search
+    $('customer_search').addEventListener('input',e=>renderCustomers(e.target.value.trim()));
+    $('cashCustomerBtn').addEventListener('click',()=>{selectCustomer(0)});
+  </script>
+</body>
+</html>

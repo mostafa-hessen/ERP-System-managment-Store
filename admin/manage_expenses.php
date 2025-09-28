@@ -146,10 +146,10 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
 <div class="container-fluid mt-4 pt-3">
     <div class="content-max">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
             <div>
                 <h1 class="h3 mb-0"><i class="fas fa-receipt"></i> إدارة المصروفات</h1>
-                <small class="text-muted">عرض وتصفية المصروفات المسجلة مع واجهة أبسط ومقروءة.</small>
+                <small class="custom-text">عرض وتصفية المصروفات المسجلة مع واجهة أبسط ومقروءة.</small>
             </div>
             <div class="page-actions d-flex gap-2">
                 <a href="<?php echo $back_link; ?>" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> عودة</a>
@@ -160,20 +160,26 @@ require_once BASE_DIR . 'partials/sidebar.php';
         <?php echo $message; ?>
 
         <div class="card mb-3 shadow-sm expenses-card">
-            <div class="card-header">
-                <i class="fas fa-filter"></i> تصفية المصروفات
-            </div>
-            <div class="card-body">
-                <form action="<?php echo $current_page_url_for_forms; ?>" method="get" class="row gx-3 gy-2 align-items-end">
-                    <div class="col-md-4">
+            <form action="<?php echo $current_page_url_for_forms; ?>" method="get" class="row gx-3 gy-2 align-items-end">
+            <div class="card-header py-1 d-flex justify-content-around align-items-center">
+               <!-- <div class="p-2">
+
+                   <i class="fas fa-filter"></i> تصفية المصروفات
+               </div>  -->
+
+                
+            <!-- </div> -->
+
+            <!-- <div class="card-body row"> -->
+                    <div class="col-md-3">
                         <label for="filter_start_date" class="form-label">من تاريخ:</label>
                         <input type="date" class="form-control" id="filter_start_date" name="filter_start_date" value="<?php echo htmlspecialchars($start_date_filter); ?>">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label for="filter_end_date" class="form-label">إلى تاريخ:</label>
                         <input type="date" class="form-control" id="filter_end_date" name="filter_end_date" value="<?php echo htmlspecialchars($end_date_filter); ?>">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label for="filter_category_id" class="form-label">حسب الفئة:</label>
                         <select name="filter_category_id" id="filter_category_id" class="form-select">
                             <option value="">-- كل الفئات --</option>
@@ -184,7 +190,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="col-12 text-end mt-3">
+                    <div class="text mt-3">
                         <button type="submit" name="filter_expenses_btn" class="btn btn-primary"><i class="fas fa-search"></i> عرض</button>
                         <a href="<?php echo $current_page_url_for_forms; ?>" class="btn btn-outline-secondary ms-2"><i class="fas fa-times"></i> مسح الفلتر</a>
                     </div>
@@ -203,14 +209,14 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         if(!empty($selected_category_id) && !empty($categories_list)) {
                             foreach($categories_list as $c_item) { if($c_item['id'] == $selected_category_id) {$filter_text_display[] = "فئة: " . htmlspecialchars($c_item['name']); break;}}
                         }
-                        if(!empty($filter_text_display)) { echo " <small class='text-muted'>(" . implode("، ", $filter_text_display) . ")</small>";}
+                        if(!empty($filter_text_display)) { echo " <small class='custom-text'>(" . implode("، ", $filter_text_display) . ")</small>";}
                     ?>
                 </div>
                 <span class="badge bg-danger rounded-pill fs-6">الإجمالي: <?php echo number_format($total_expenses_displayed, 2); ?> ج.م</span>
             </div>
-            <div class="card-body">
-                <div class="wide-table-wrapper">
-                    <table class="table table-striped table-hover table-bordered align-middle table-lg w-100">
+            <!-- <div class="card-body"> -->
+                <div class="wide-table-wrapper custom-table-wrapper">
+                    <table class="tabe custom-table customized">
                         <thead class="table-dark">
                             <tr>
                                 <th style="width:60px">#</th>
@@ -272,7 +278,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         </tbody>
                     </table>
                 </div>
-            </div>
         </div>
     </div>
 </div>

@@ -168,7 +168,7 @@ if (!empty($customers)) {
 require_once BASE_DIR . 'partials/sidebar.php';
 
 ?>
-<div class="container mt-5 pt-3">
+<div class="container mt-1 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h1><i class="fas fa-address-book"></i> إدارة العملاء</h1>
         <div>
@@ -203,10 +203,10 @@ require_once BASE_DIR . 'partials/sidebar.php';
     <!-- جدول العملاء -->
     <div class="card">
         <div class="card-header">قائمة العملاء</div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover table-bordered align-middle">
-                    <thead class="table-dark">
+        <!-- <div class="card-body"> -->
+            <div class="table-responsive custom-table-wrapper ">
+                <table class="tabe custom-table ">
+                    <thead class="table-dark center">
                         <tr>
                             <th>#</th>
                             <th>الاسم</th>
@@ -280,7 +280,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
                         <?php endif; ?>
                     </tbody>
                 </table>
-            </div>
         </div>
     </div>
 </div>

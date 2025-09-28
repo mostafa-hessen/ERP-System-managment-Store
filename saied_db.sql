@@ -27,28 +27,28 @@ SET time_zone = "+00:00";
 -- Table structure for table `batches`
 --
 
-CREATE TABLE `batches` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `product_id` int(11) NOT NULL,
-  `qty` decimal(13,4) NOT NULL DEFAULT 0.0000,
-  `remaining` decimal(13,4) NOT NULL DEFAULT 0.0000,
-  `original_qty` decimal(13,4) NOT NULL,
-  `unit_cost` decimal(13,4) NOT NULL DEFAULT 0.0000,
-  `sale_price` decimal(13,4) NOT NULL DEFAULT 0.0000,
-  `received_at` date DEFAULT NULL,
-  `expiry` date DEFAULT NULL,
-  `notes` text DEFAULT NULL,
-  `source_invoice_id` int(11) DEFAULT NULL,
-  `source_item_id` int(11) DEFAULT NULL,
-  `created_by` int(11) DEFAULT NULL,
-  `adjusted_by` int(11) DEFAULT NULL,
-  `adjusted_at` datetime DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  `revert_reason` varchar(255) DEFAULT NULL,
-  `cancel_reason` varchar(255) DEFAULT NULL,
-  `status` enum('active','consumed','cancelled','reverted') NOT NULL DEFAULT 'active'
-) ;
+  CREATE TABLE `batches` (
+    `id` bigint(20) UNSIGNED NOT NULL,
+    `product_id` int(11) NOT NULL,
+    `qty` decimal(13,4) NOT NULL DEFAULT 0.0000,
+    `remaining` decimal(13,4) NOT NULL DEFAULT 0.0000,
+    `original_qty` decimal(13,4) NOT NULL,
+    `unit_cost` decimal(13,4) NOT NULL DEFAULT 0.0000,
+    `sale_price` decimal(13,4) NOT NULL DEFAULT 0.0000,
+    `received_at` date DEFAULT NULL,
+    `expiry` date DEFAULT NULL,
+    `notes` text DEFAULT NULL,
+    `source_invoice_id` int(11) DEFAULT NULL,
+    `source_item_id` int(11) DEFAULT NULL,
+    `created_by` int(11) DEFAULT NULL,
+    `adjusted_by` int(11) DEFAULT NULL,
+    `adjusted_at` datetime DEFAULT NULL,
+    `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+    `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    `revert_reason` varchar(255) DEFAULT NULL,
+    `cancel_reason` varchar(255) DEFAULT NULL,
+    `status` enum('active','consumed','cancelled','reverted') NOT NULL DEFAULT 'active'
+  ) ;
 
 --
 -- Dumping data for table `batches`

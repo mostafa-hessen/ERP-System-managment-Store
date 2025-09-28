@@ -168,7 +168,7 @@ $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
 
 <style>
     /* مظهر محسن وخفيف للفئات */
-    .content-max { max-width: 1100px; margin: 0 auto; }
+    .content-max { max-width: 1500px; margin: 0 auto; }
     .card .card-header h5 { margin: 0; }
     .btn-back-sm { padding: .25rem .5rem; font-size: .85rem; }
     .form-small .form-control, .form-small .form-select, .form-small textarea { padding: .4rem .5rem; }
@@ -183,7 +183,7 @@ $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
                 <h1 class="h4 mb-0"><i class="fas fa-tags"></i> إدارة فئات المصروفات</h1>
-                <small class="text-muted">أضف أو حدِّث فئات المصروفات المستخدمة في النظام.</small>
+                <small class="note-text">أضف أو حدِّث فئات المصروفات المستخدمة في النظام.</small>
             </div>
             <div>
                 <a href="<?php echo $back_link; ?>" class="btn btn-outline-secondary btn-back-sm"><i class="fas fa-arrow-left"></i> عودة للمصروفات</a>
@@ -193,7 +193,7 @@ $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
         <?php echo $message; ?>
 
         <div class="row g-3">
-            <div class="col-lg-4">
+            <div class="col-lg-3">
                 <div class="card shadow-sm">
                     <div class="card-header <?php echo $edit_mode ? 'bg-warning text-dark' : 'bg-success text-white'; ?>">
                         <h5><i class="fas <?php echo $edit_mode ? 'fa-edit' : 'fa-plus-circle'; ?>"></i> <?php echo $edit_mode ? 'تعديل الفئة' : 'إضافة فئة مصروفات جديدة'; ?></h5>
@@ -227,15 +227,15 @@ $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
                 </div>
             </div>
 
-            <div class="col-lg-8 mt-lg-0">
+            <div class="col-lg-9 mt-lg-0">
                 <div class="card shadow-sm">
                     <div class="card-header">
                         قائمة الفئات المسجلة
                     </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover table-bordered align-middle">
-                                <thead class="table-dark">
+                    <!-- <div class="card-body"> -->
+                        <div class="table-responsive custom-table-wrapper">
+                            <table class="custom-table ">
+                                <thead class="table-dark center">
                                     <tr>
                                         <th style="width:60px">#</th>
                                         <th>اسم الفئة</th>
@@ -279,7 +279,7 @@ $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
                         </div>
                     </div>
                 </div>
-            </div>
+            <!-- </div> -->
 
         </div>
     </div>

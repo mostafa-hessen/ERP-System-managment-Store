@@ -148,11 +148,12 @@ require_once BASE_DIR . 'partials/sidebar.php';
 <div class="container mt-5 pt-3">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="fas fa-people-carry"></i> إدارة الموردين</h1>
-<div>
+        <div>
             <a href="<?php echo BASE_URL; ?>user/welcome.php" class="btn btn-outline-secondary me-2"><i class="fas fa-arrow-left"></i> رجوع</a>
             <a href="<?php echo BASE_URL; ?>admin/manage_purchase_invoices.php" class="btn btn-outline-primary me-2"><i class="fas fa-file-invoice"></i> فواتير وارد</a>
             <a href="<?php echo BASE_URL; ?>admin/add_supplier.php" class="btn btn-success"><i class="fas fa-plus-circle"></i> إضافة مورد جديد</a>
-        </div>    </div>
+        </div>
+    </div>
 
     <?php echo $message; ?>
 
@@ -162,20 +163,20 @@ require_once BASE_DIR . 'partials/sidebar.php';
                 <div class="col-sm-8">
                     <label class="visually-hidden" for="search_term">بحث</label>
                     <input type="text" class="form-control" id="search_term" name="search_term"
-                           placeholder="ابحث بالاسم أو رقم الموبايل..."
-                           value="<?php echo htmlspecialchars($search_term); ?>">
+                        placeholder="ابحث بالاسم أو رقم الموبايل..."
+                        value="<?php echo htmlspecialchars($search_term); ?>">
                 </div>
                 <div class="col-sm-2">
                     <button type="submit" name="search_button" class="btn btn-primary w-100">
                         <i class="fas fa-search"></i> بحث
                     </button>
                 </div>
-                <?php if(!empty($search_term)): ?>
-                <div class="col-sm-2">
-                     <a href="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" class="btn btn-outline-secondary w-100">
-                        <i class="fas fa-times"></i> مسح
-                     </a>
-                </div>
+                <?php if (!empty($search_term)): ?>
+                    <div class="col-sm-2">
+                        <a href="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" class="btn btn-outline-secondary w-100">
+                            <i class="fas fa-times"></i> مسح
+                        </a>
+                    </div>
                 <?php endif; ?>
             </form>
         </div>
@@ -185,76 +186,80 @@ require_once BASE_DIR . 'partials/sidebar.php';
     <div class="card shadow">
         <div class="card-header">
             قائمة الموردين المسجلين
-            <?php if(!empty($search_term)) { echo " (نتائج البحث عن: \"" . htmlspecialchars($search_term) . "\")"; } ?>
+            <?php if (!empty($search_term)) {
+                echo " (نتائج البحث عن: \"" . htmlspecialchars($search_term) . "\")";
+            } ?>
         </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover table-bordered align-middle">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>#</th>
-                            <th>اسم المورد</th>
-                            <th>الموبايل</th>
-                            <th>المدينة</th>
-                            <th class="d-none d-md-table-cell">السجل التجاري</th>
-                            <th class="d-none d-md-table-cell">أضيف بواسطة</th>
-                            <th class="d-none d-md-table-cell">تاريخ الإضافة</th>
-                            <th class="text-center" style="min-width: 200px;">إجراءات</th> </tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($result_suppliers && $result_suppliers->num_rows > 0): ?>
-                            <?php while($supplier = $result_suppliers->fetch_assoc()): ?>
-                                <tr>
-                                    <td><?php echo $supplier["id"]; ?></td>
-                                    <td><?php echo htmlspecialchars($supplier["name"]); ?></td>
-                                    <td><?php echo htmlspecialchars($supplier["mobile"]); ?></td>
-                                    <td><?php echo htmlspecialchars($supplier["city"]); ?></td>
-                                    <td class="d-none d-md-table-cell"><?php echo !empty($supplier["commercial_register"]) ? htmlspecialchars($supplier["commercial_register"]) : '-'; ?></td>
-                                    <td class="d-none d-md-table-cell"><?php echo htmlspecialchars($supplier["creator_name"] ?? 'غير محدد'); ?></td>
-                                    <td class="d-none d-md-table-cell"><?php echo date('Y-m-d', strtotime($supplier["created_at"])); ?></td>
-                                    <td class="text-center">
-                                        <form action="<?php echo BASE_URL; ?>admin/edit_supplier.php" method="post" class="d-inline">
-                                            <input type="hidden" name="supplier_id_to_edit" value="<?php echo $supplier["id"]; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                            <button type="submit" class="btn btn-warning btn-sm" title="تعديل المورد">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </form>
+        <!-- <div class="card-body"> -->
+        <div class="table-responsive  custom-table-wrapper ">
+            <table class=" custom-table  ">
+                <thead class="table-dark center">
+                    <tr>
+                        <th>#</th>
+                        <th>اسم المورد</th>
+                        <th>الموبايل</th>
+                        <th>المدينة</th>
+                        <th class="d-none d-md-table-cell">السجل التجاري</th>
+                        <th class="d-none d-md-table-cell">أضيف بواسطة</th>
+                        <th class="d-none d-md-table-cell">تاريخ الإضافة</th>
+                        <th class="text-center" style="min-width: 200px;">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($result_suppliers && $result_suppliers->num_rows > 0): ?>
+                        <?php while ($supplier = $result_suppliers->fetch_assoc()): ?>
+                            <tr>
+                                <td><?php echo $supplier["id"]; ?></td>
+                                <td><?php echo htmlspecialchars($supplier["name"]); ?></td>
+                                <td><?php echo htmlspecialchars($supplier["mobile"]); ?></td>
+                                <td><?php echo htmlspecialchars($supplier["city"]); ?></td>
+                                <td class="d-none d-md-table-cell"><?php echo !empty($supplier["commercial_register"]) ? htmlspecialchars($supplier["commercial_register"]) : '-'; ?></td>
+                                <td class="d-none d-md-table-cell"><?php echo htmlspecialchars($supplier["creator_name"] ?? 'غير محدد'); ?></td>
+                                <td class="d-none d-md-table-cell"><?php echo date('Y-m-d', strtotime($supplier["created_at"])); ?></td>
+                                <td class="text-center">
+                                    <form action="<?php echo BASE_URL; ?>admin/edit_supplier.php" method="post" class="d-inline">
+                                        <input type="hidden" name="supplier_id_to_edit" value="<?php echo $supplier["id"]; ?>">
+                                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                        <button type="submit" class="btn btn-warning btn-sm" title="تعديل المورد">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                    </form>
 
-                                        <form action="<?php echo $current_page_url_for_forms; // يرسل لنفس الصفحة مع الحفاظ على البحث ?>" method="post" class="d-inline ms-1">
-                                            <input type="hidden" name="supplier_id_to_delete" value="<?php echo $supplier["id"]; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                            <button type="submit" name="delete_supplier" class="btn btn-danger btn-sm"
-                                                    onclick="return confirm('هل أنت متأكد من حذف هذا المورد؟ لا يمكن التراجع عن هذا الإجراء.');"
-                                                    title="حذف المورد">
-                                                <i class="fas fa-trash-alt"></i>
-                                            </button>
-                                        </form>
+                                    <form action="<?php echo $current_page_url_for_forms; // يرسل لنفس الصفحة مع الحفاظ على البحث 
+                                                    ?>" method="post" class="d-inline ms-1">
+                                        <input type="hidden" name="supplier_id_to_delete" value="<?php echo $supplier["id"]; ?>">
+                                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                        <button type="submit" name="delete_supplier" class="btn btn-danger btn-sm"
+                                            onclick="return confirm('هل أنت متأكد من حذف هذا المورد؟ لا يمكن التراجع عن هذا الإجراء.');"
+                                            title="حذف المورد">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </form>
 
-                                        <!-- <form action="<?php echo $view_purchase_invoice_link; ?>" method="post" class="d-inline ms-1">
+                                    <!-- <form action="<?php echo $view_purchase_invoice_link; ?>" method="post" class="d-inline ms-1">
                                             <input type="hidden" name="supplier_id" value="<?php echo $supplier["id"]; ?>">
-                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; // ممارسة جيدة ?>">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; // ممارسة جيدة 
+                                                                                            ?>">
                                             <button type="submit" class="btn btn-success btn-sm" title="بدء عمل فاتورة وارد لهذا المورد">
                                                 <i class="fas fa-file-import"></i> فاتورة وارد
                                             </button>
                                         </form> -->
-                                        <!-- استخدم رابط GET إلى صفحة العرض (view) مع تمرير supplier_id -->
-<a href="<?php echo BASE_URL; ?>admin/view_purchase_invoice.php?supplier_id=<?php echo intval($supplier['id']); ?>" class="btn btn-success btn-sm ms-1" title="بدء فاتورة وارد لهذا المورد">
-    <i class="fas fa-file-import"></i> فاتورة وارد
-</a>
-                                        </td>
-                                </tr>
-                            <?php endwhile; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="8" class="text-center"> <?php echo !empty($search_term) ? 'لا توجد نتائج تطابق بحثك.' : 'لا يوجد موردون مسجلون حالياً.'; ?>
-                                    <a href="<?php echo BASE_URL; ?>admin/add_supplier.php">أضف مورداً الآن!</a>
+                                    <!-- استخدم رابط GET إلى صفحة العرض (view) مع تمرير supplier_id -->
+                                    <a href="<?php echo BASE_URL; ?>admin/view_purchase_invoice.php?supplier_id=<?php echo intval($supplier['id']); ?>" class="btn btn-success btn-sm ms-1" title="بدء فاتورة وارد لهذا المورد">
+                                        <i class="fas fa-file-import"></i> فاتورة وارد
+                                    </a>
                                 </td>
                             </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <tr>
+                            <td colspan="8" class="text-center"> <?php echo !empty($search_term) ? 'لا توجد نتائج تطابق بحثك.' : 'لا يوجد موردون مسجلون حالياً.'; ?>
+                                <a href="<?php echo BASE_URL; ?>admin/add_supplier.php">أضف مورداً الآن!</a>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

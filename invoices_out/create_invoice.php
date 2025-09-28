@@ -1,560 +1,529 @@
 <?php
-// invoices_out/view.php
-// إصدار مُحدَّث: إصلاحات create_customer bind_param، منع إضافة منتجات منتهية الرصيد، تفريغ نموذج الإضافة، تحديث المخزون في الواجهة بعد الإتمام، شرح location.pathname usage.
-// خذ نسخة احتياطية قبل الاستبدال.
+// create_invoice.php (مُحدّث)
+// إنشاء فاتورة — يدعم FIFO allocations, CSRF (meta + JS), اختيار عميل مثبت، إضافة عميل، created_by tracking.
 
-$page_title = "تفاصيل الفاتورة - كاشير سريع";
-$page_css = "invoice_out.css";
+// ========== BOOT (config + session) ==========
+$page_title = "إنشاء فاتورة بيع";
+$class_dashboard = "active";
+require_once dirname(__DIR__) . '/config.php';
+require_once BASE_DIR . 'partials/session_admin.php'; // تأكد أن session_start() هنا وأن $_SESSION['user_id'] متوفر
 
-ob_start();
-
-if (file_exists(dirname(__DIR__) . '/config.php')) {
-    require_once dirname(__DIR__) . '/config.php';
-} elseif (file_exists(dirname(dirname(__DIR__)) . '/config.php')) {
-    require_once dirname(dirname(__DIR__)) . '/config.php';
-} else {
-    error_log('config.php missing in invoices_out/view.php');
-    http_response_code(500);
-    echo "خطأ داخلي: إعدادات غير موجودة.";
-    exit;
+// fallback PDO if not provided by config
+if (!isset($pdo)) {
+    try {
+        $db_host = '127.0.0.1';
+        $db_name = 'saied_db';
+        $db_user = 'root';
+        $db_pass = '';
+        $dsn = "mysql:host={$db_host};dbname={$db_name};charset=utf8mb4";
+        $pdo = new PDO($dsn, $db_user, $db_pass, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo "DB connection failed: " . htmlspecialchars($e->getMessage());
+        exit;
+    }
 }
-if (!isset($conn) || !$conn) { echo "خطأ في الاتصال بقاعدة البيانات."; exit; }
 
-function e($s){ return htmlspecialchars($s ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
-
-// CSRF
-if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+// CSRF token
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 $csrf_token = $_SESSION['csrf_token'];
 
-// readonly mode
-$readonly = isset($_GET['readonly']) && $_GET['readonly'] == '1';
 
-// Fixed cash customer ID (you specified ID 8)
-$FIXED_CASH_ID = 8;
-$CASH_CUSTOMER_ID = null;
-$CASH_CUSTOMER_NAME = 'عميل نقدي';
-try {
-    // Prefer given ID if exists
-    $st = $conn->prepare("SELECT id, name FROM customers WHERE id = ? LIMIT 1");
-    if ($st) {
-        $st->bind_param("i", $FIXED_CASH_ID);
-        $st->execute();
-        $res = $st->get_result();
-        if ($row = $res->fetch_assoc()) {
-            $CASH_CUSTOMER_ID = intval($row['id']);
-            $CASH_CUSTOMER_NAME = $row['name'] ?: $CASH_CUSTOMER_NAME;
+
+// Helper JSON
+function jsonOut($payload) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+/* =========================
+   AJAX endpoints
+   Must run before any HTML output
+   ========================= */
+if (isset($_REQUEST['action'])) {
+    $action = $_REQUEST['action'];
+
+    // 0) sync_consumed
+    if ($action === 'sync_consumed') {
+        try {
+            $stmt = $pdo->prepare("UPDATE batches SET status = 'consumed', updated_at = NOW() WHERE status = 'active' AND COALESCE(remaining,0) <= 0");
+            $stmt->execute();
+            jsonOut(['ok'=>true,'updated'=>$stmt->rowCount()]);
+        } catch (Exception $e) {
+            jsonOut(['ok'=>false,'error'=>'فشل تحديث حالات الدفعات.']);
         }
-        $st->close();
     }
-    // if not found by ID, try by name or create fallback (to be safe)
-    if (!$CASH_CUSTOMER_ID) {
-        $st2 = $conn->prepare("SELECT id, name FROM customers WHERE name = ? LIMIT 1");
-        if ($st2) {
-            $st2->bind_param("s", $CASH_CUSTOMER_NAME);
-            $st2->execute();
-            $r2 = $st2->get_result();
-            if ($row2 = $r2->fetch_assoc()) {
-                $CASH_CUSTOMER_ID = intval($row2['id']);
-                $CASH_CUSTOMER_NAME = $row2['name'] ?: $CASH_CUSTOMER_NAME;
+
+    // 1) products (with aggregates)
+    if ($action === 'products') {
+        $q = trim($_GET['q'] ?? '');
+        $params = [];
+        $where = '';
+        if ($q !== '') {
+            $where = " WHERE (p.name LIKE ? OR p.product_code LIKE ? OR p.id = ?)";
+            $params[] = "%$q%";
+            $params[] = "%$q%";
+            $params[] = is_numeric($q) ? (int)$q : 0;
+        }
+        $sql = "
+            SELECT p.id, p.product_code, p.name, p.unit_of_measure, p.current_stock, p.reorder_level,
+                   COALESCE(b.rem_sum,0) AS remaining_active,
+                   COALESCE(b.val_sum,0) AS stock_value_active,
+                   (SELECT b2.unit_cost FROM batches b2 WHERE b2.product_id = p.id AND b2.status IN ('active','consumed') ORDER BY b2.received_at DESC, b2.created_at DESC LIMIT 1) AS last_purchase_price,
+                   (SELECT b2.sale_price FROM batches b2 WHERE b2.product_id = p.id AND b2.status IN ('active','consumed') ORDER BY b2.received_at DESC, b2.created_at DESC LIMIT 1) AS last_sale_price,
+                   (SELECT b2.received_at FROM batches b2 WHERE b2.product_id = p.id AND b2.status IN ('active','consumed') ORDER BY b2.received_at DESC, b2.created_at DESC LIMIT 1) AS last_batch_date
+            FROM products p
+            LEFT JOIN (
+               SELECT product_id, SUM(remaining) AS rem_sum, SUM(remaining * unit_cost) AS val_sum
+               FROM batches
+               WHERE status = 'active' AND remaining > 0
+               GROUP BY product_id
+            ) b ON b.product_id = p.id
+            {$where}
+            ORDER BY p.id DESC
+            LIMIT 2000
+        ";
+        try {
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
+            jsonOut(['ok'=>true,'products'=>$rows]);
+        } catch (Exception $e) {
+            jsonOut(['ok'=>false,'error'=>'فشل جلب المنتجات.']);
+        }
+    }
+
+    // 2) batches list for a product
+    if ($action === 'batches' && isset($_GET['product_id'])) {
+        $product_id = (int)$_GET['product_id'];
+        try {
+            $stmt = $pdo->prepare("SELECT id, product_id, qty, remaining, original_qty, unit_cost, sale_price, received_at, expiry, notes, source_invoice_id, source_item_id, created_by, adjusted_by, adjusted_at, created_at, updated_at, revert_reason, cancel_reason, status FROM batches WHERE product_id = ? ORDER BY received_at DESC, created_at DESC, id DESC");
+            $stmt->execute([$product_id]);
+            $batches = $stmt->fetchAll();
+            $pstmt = $pdo->prepare("SELECT id, name, product_code FROM products WHERE id = ?");
+            $pstmt->execute([$product_id]);
+            $prod = $pstmt->fetch();
+            jsonOut(['ok'=>true,'batches'=>$batches,'product'=>$prod]);
+        } catch (Exception $e) {
+            jsonOut(['ok'=>false,'error'=>'فشل جلب الدفعات.']);
+        }
+    }
+
+    // 3) customers list/search
+    if ($action === 'customers') {
+        $q = trim($_GET['q'] ?? '');
+        try {
+            if ($q === '') {
+                $stmt = $pdo->query("SELECT id,name,mobile,city,address FROM customers ORDER BY name LIMIT 200");
+                $rows = $stmt->fetchAll();
+            } else {
+                $stmt = $pdo->prepare("SELECT id,name,mobile,city,address FROM customers WHERE name LIKE ? OR mobile LIKE ? ORDER BY name LIMIT 200");
+                $like = "%$q%";
+                $stmt->execute([$like,$like]);
+                $rows = $stmt->fetchAll();
             }
-            $st2->close();
+            jsonOut(['ok'=>true,'customers'=>$rows]);
+        } catch (Exception $e) {
+            jsonOut(['ok'=>false,'error'=>'فشل جلب العملاء.']);
         }
     }
-    if (!$CASH_CUSTOMER_ID) {
-        $ins = $conn->prepare("INSERT INTO customers (name,mobile,city,address,created_by,created_at) VALUES (?, '', '', '', 0, NOW())");
-        if ($ins) {
-            $ins->bind_param("s", $CASH_CUSTOMER_NAME);
-            $ins->execute();
-            $CASH_CUSTOMER_ID = $ins->insert_id;
-            $ins->close();
-        }
+
+    // 4) add customer (POST)
+    // if ($action === 'add_customer' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    //     $token = $_POST['csrf_token'] ?? '';
+    //     if (!hash_equals($_SESSION['csrf_token'], (string)$token)) jsonOut(['ok'=>false,'error'=>'رمز التحقق (CSRF) غير صالح. أعد تحميل الصفحة وحاول مجدداً.']);
+    //     $name = trim($_POST['name'] ?? '');
+    //     $mobile = trim($_POST['mobile'] ?? '');
+    //     $city = trim($_POST['city'] ?? '');
+    //     $address = trim($_POST['address'] ?? '');
+    //     $notes = trim($_POST['notes'] ?? '');
+    //     if ($name === '') jsonOut(['ok'=>false,'error'=>'الرجاء إدخال اسم العميل.']);
+    //     try {
+    //         $stmt = $pdo->prepare("INSERT INTO customers (name,mobile,city,address,notes,created_by,created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+    //         $stmt->execute([$name,$mobile,$city,$address,$notes,$created_by]);
+    //         $newId = (int)$pdo->lastInsertId();
+    //         $pstmt = $pdo->prepare("SELECT id,name,mobile,city,address FROM customers WHERE id = ?");
+    //         $pstmt->execute([$newId]);
+    //         $new = $pstmt->fetch();
+    //         jsonOut(['ok'=>true,'msg'=>'تم إضافة العميل','customer'=>$new]);
+    //     } catch (PDOException $e) {
+    //         if ($e->errorInfo[1] == 1062) jsonOut(['ok'=>false,'error'=>'العميل موجود مسبقاً.']);
+    //         jsonOut(['ok'=>false,'error'=>'فشل إضافة العميل.']);
+    //     } catch (Exception $e) {
+    //         jsonOut(['ok'=>false,'error'=>'فشل إضافة العميل.']);
+    //     }
+    // }
+
+    // 4) add customer (POST)
+if ($action === 'add_customer' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = $_POST['csrf_token'] ?? '';
+    if (!hash_equals($_SESSION['csrf_token'], (string)$token)) {
+        jsonOut(['ok' => false, 'error' => 'رمز التحقق (CSRF) غير صالح. أعد تحميل الصفحة وحاول مجدداً.']);
     }
-} catch (Exception $ex) {
-    error_log("CASH customer check failed: " . $ex->getMessage());
-}
 
-// Helpers
-function get_next_invoice_id($conn) {
-    $db = null;
-    $res = $conn->query("SELECT DATABASE() as db");
-    if ($res) { $row = $res->fetch_assoc(); $db = $row['db']; $res->free(); }
-    if (!$db) return null;
-    $stmt = $conn->prepare("SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'invoices_out' LIMIT 1");
-    if (!$stmt) return null;
-    $stmt->bind_param("s", $db); $stmt->execute();
-    $r = $stmt->get_result()->fetch_assoc(); $stmt->close();
-    return $r['AUTO_INCREMENT'] ?? null;
-}
-function invoices_has_notes($conn) {
-    $ok = false;
-    $stmt = $conn->prepare("SHOW COLUMNS FROM invoices_out LIKE 'notes'");
-    if ($stmt) { $stmt->execute(); $res = $stmt->get_result(); if ($res && $res->num_rows>0) $ok = true; $stmt->close(); }
-    return $ok;
-}
-$has_notes_col = invoices_has_notes($conn);
-
-// AJAX endpoints
-if (isset($_GET['action']) && $_GET['action'] === 'search_customers') {
-    header('Content-Type: application/json; charset=utf-8');
-    $q = trim($_GET['q'] ?? '');
-    $out = [];
-    if ($q === '') {
-        $stmt = $conn->prepare("SELECT id, name, mobile, city, address FROM customers WHERE id <> ? ORDER BY id DESC LIMIT 200");
-        $stmt->bind_param("i", $CASH_CUSTOMER_ID);
-        $stmt->execute(); $res = $stmt->get_result();
-        while ($r = $res->fetch_assoc()) $out[] = $r; $stmt->close();
-    } else {
-        $like = "%$q%";
-        $stmt = $conn->prepare("SELECT id, name, mobile, city, address FROM customers WHERE (name LIKE ? OR mobile LIKE ?) AND id <> ? LIMIT 200");
-        $stmt->bind_param("ssi", $like, $like, $CASH_CUSTOMER_ID);
-        $stmt->execute(); $res = $stmt->get_result();
-        while ($r = $res->fetch_assoc()) $out[] = $r; $stmt->close();
-    }
-    echo json_encode(['ok'=>true,'results'=>$out], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_customer') {
-    header('Content-Type: application/json; charset=utf-8');
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) { echo json_encode(['ok'=>false,'msg'=>'CSRF error']); exit; }
-    $name = trim($_POST['name'] ?? ''); 
-    $mobile = trim($_POST['mobile'] ?? ''); 
-    $city = trim($_POST['city'] ?? ''); 
+    $name = trim($_POST['name'] ?? '');
+    $mobile = trim($_POST['mobile'] ?? '');
+    $city = trim($_POST['city'] ?? '');
     $address = trim($_POST['address'] ?? '');
-    $notes = trim($_POST['notes'] ?? ''); // <-- جديد
-
-    if ($name === '') { echo json_encode(['ok'=>false,'msg'=>'الاسم مطلوب']); exit; }
-    if ($mobile !== '' && !preg_match('/^[0-9]{11}$/', $mobile)) { echo json_encode(['ok'=>false,'msg'=>'الموبايل يجب أن يتكون من 11 رقمًا']); exit; }
-    if ($mobile !== '') {
-        $stmt = $conn->prepare("SELECT id FROM customers WHERE mobile = ? LIMIT 1"); $stmt->bind_param("s",$mobile); $stmt->execute(); $stmt->store_result();
-        if ($stmt->num_rows>0) { $stmt->close(); echo json_encode(['ok'=>false,'msg'=>'رقم الموبايل مسجل سابقاً']); exit; }
-        $stmt->close();
-    }
-    $created_by = $_SESSION['id'] ?? 0;
-
-    // INSERT مع حقل notes
-    $stmt = $conn->prepare("INSERT INTO customers (name,mobile,city,address,notes,created_by,created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-    if (!$stmt) { echo json_encode(['ok'=>false,'msg'=>'DB prepare error: '.$conn->error]); exit; }
-    // types: name,mobile,city,address,notes,created_by => ssss si  => "sssssi"
-    $stmt->bind_param("sssssi", $name, $mobile, $city, $address, $notes, $created_by);
-    if (!$stmt->execute()) { echo json_encode(['ok'=>false,'msg'=>'فشل الإنشاء: '.$stmt->error]); $stmt->close(); exit; }
-    $new_id = $stmt->insert_id; $stmt->close();
-
-    // جِب السجل المحدث مع الحقول (بما فيها notes)
-    $stmt2 = $conn->prepare("SELECT id,name,mobile,city,address,notes FROM customers WHERE id = ? LIMIT 1");
-    $stmt2->bind_param("i",$new_id); $stmt2->execute(); $row = $stmt2->get_result()->fetch_assoc(); $stmt2->close();
-
-    echo json_encode(['ok'=>true,'customer'=>$row], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-
-// Load products and next invoice id
-$products_list = [];
-$sqlP = "SELECT id, product_code, name, selling_price, cost_price, current_stock FROM products ORDER BY name LIMIT 3000";
-if ($resP = $conn->query($sqlP)) { while ($r = $resP->fetch_assoc()) $products_list[] = $r; $resP->free(); }
-$next_invoice_id = get_next_invoice_id($conn);
-
-// Load invoice if id given
-$invoice_id = 0; $invoice = null; $items = [];
-if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-    $invoice_id = intval($_GET['id']);
-    $stmt = $conn->prepare("SELECT * FROM invoices_out WHERE id = ? LIMIT 1");
-    if ($stmt) { $stmt->bind_param("i",$invoice_id); $stmt->execute(); $invoice = $stmt->get_result()->fetch_assoc(); $stmt->close(); }
-    if ($invoice) {
-        $s2 = $conn->prepare("SELECT id, product_id, quantity, selling_price, cost_price_per_unit, total_price FROM invoice_out_items WHERE invoice_out_id = ?");
-        if ($s2) { $s2->bind_param("i",$invoice_id); $s2->execute(); $res2 = $s2->get_result(); while ($r = $res2->fetch_assoc()) $items[] = $r; $s2->close(); }
-    }
-}
-// --- default delivered value handling (supports 'yes'/'no', 1/0, true/false)
-// put this after you load $invoice from DB
-$delivered_val = 'no'; // default = مؤجل
-if (!empty($invoice) && array_key_exists('delivered', $invoice)) {
-    $d = $invoice['delivered'];
-    if ($d === 'yes' || $d === '1' || $d === 1 || $d === 'true' || $d === true) {
-        $delivered_val = 'yes';
-    } else {
-        $delivered_val = 'no';
-    }
-}
-// If the form was submitted and we re-render (validation fail), prefer posted value
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delivered'])) {
-    $delivered_val = ($_POST['delivered'] === 'yes') ? 'yes' : 'no';
-}
-
-// Selected customer if invoice
-$session_customer_id = 0;
-$session_notes = '';
-if ($invoice) {
-    $session_customer_id = $invoice['customer_id'] ?? 0;
-    $session_notes = $invoice['notes'] ?? '';
-}
-$customer = null;
-if ($session_customer_id > 0) {
-    $st = $conn->prepare("SELECT id,name,mobile,city,address FROM customers WHERE id = ? LIMIT 1");
-    if ($st) { $st->bind_param("i",$session_customer_id); $st->execute(); $customer = $st->get_result()->fetch_assoc(); $st->close(); }
-}
-
-// Stock helper
-function check_stock_for_items($conn, $items) {
-    $bad = [];
-    foreach ($items as $it) {
-        $pid = intval($it['product_id'] ?? 0);
-        $qty = floatval($it['quantity'] ?? 0);
-        if ($pid <= 0) continue;
-        $stmt = $conn->prepare("SELECT current_stock FROM products WHERE id = ? LIMIT 1");
-        if (!$stmt) { $bad[] = "خطأ فني عند التحقق من المخزون"; continue; }
-        $stmt->bind_param("i",$pid); $stmt->execute(); $r = $stmt->get_result()->fetch_assoc(); $stmt->close();
-        $stock = floatval($r['current_stock'] ?? 0);
-        if ($qty > $stock) $bad[] = "المخزون غير كافٍ للمنتج ID: $pid (المطلوب $qty — المتاح $stock)";
-    }
-    return $bad;
-}
-
-// Handle confirm (AJAX JSON)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_complete'])) {
-    $errors = [];
-    header('Content-Type: application/json; charset=utf-8');
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-        echo json_encode(['ok'=>false,'errors'=>["طلب غير صالح (CSRF)"]]); exit;
-    }
-    $posted_items = $_POST['items'] ?? [];
-    $valid_items = [];
-    foreach ($posted_items as $it) {
-        $pid = intval($it['product_id'] ?? 0);
-        $qty = floatval($it['quantity'] ?? 0);
-        $sp = floatval($it['selling_price'] ?? 0);
-        $cp = floatval($it['cost_price_per_unit'] ?? 0);
-        if ($qty <= 0) continue;
-        $valid_items[] = ['product_id'=>$pid,'quantity'=>$qty,'selling_price'=>$sp,'cost_price_per_unit'=>$cp,'total_price'=>round($qty*$sp,2)];
-    }
-
-    $posted_customer_id = intval($_POST['customer_id'] ?? 0);
-    $posted_temp_name = trim($_POST['temp_customer_name'] ?? '');
-    if ($posted_customer_id <= 0) $errors[] = "يجب اختيار عميل قبل الإتمام.";
-    if (empty($valid_items)) $errors[] = "لا توجد بنود صالحة لإتمام الفاتورة.";
-
-    $stock_issues = check_stock_for_items($conn, $valid_items);
-    if (!empty($stock_issues)) { foreach($stock_issues as $s) $errors[] = $s; }
-
-    $delivered_value = (isset($_POST['delivered']) && $_POST['delivered']==='yes') ? 'yes' : 'no';
-    $invoice_group = $_POST['invoice_group'] ?? 'group1';
     $notes = trim($_POST['notes'] ?? '');
 
-    if (!empty($errors)) { echo json_encode(['ok'=>false,'errors'=>$errors]); exit; }
+    // 1) التحقق من الاسم
+    if ($name === '') {
+        jsonOut(['ok' => false, 'error' => 'الرجاء إدخال اسم العميل.']);
+    }
+
+    // 2) التحقق من رقم الموبايل موجود أم لا
+    if ($mobile === '') {
+        jsonOut(['ok' => false, 'error' => 'الرجاء إدخال رقم الموبايل.']);
+    }
+
+    // 3) تنظيف و/أو تحقق بسيط لصيغة الموبايل (أرقام فقط)
+    $mobile_digits = preg_replace('/\D+/', '', $mobile); // احذف أي شيء غير رقم
+    if (strlen($mobile_digits) < 7 || strlen($mobile_digits) > 15) {
+        jsonOut(['ok' => false, 'error' => 'رقم الموبايل غير صحيح. الرجاء إدخال رقم صالح.']);
+    }
+    // استخدم النسخة المنقّحة لِحفظها/مقارنتها
+    $mobile_clean = $mobile_digits;
 
     try {
-        $conn->begin_transaction();
-
-        if ($posted_customer_id === $CASH_CUSTOMER_ID) {
-            $notes = trim($notes . "\n(عميل نقدي)");
+        // 4) فحص التكرار قبل الإدراج (حسب رقم الموبايل)
+        $chk = $pdo->prepare("SELECT id, name FROM customers WHERE mobile = ? LIMIT 1");
+        $chk->execute([$mobile_clean]);
+        $exists = $chk->fetch();
+        if ($exists) {
+            // رسالة واضحة عند التكرار
+            jsonOut(['ok' => false, 'error' => "رقم الموبايل مسجل بالفعل للعميل \"{$exists['name']}\"."]);
         }
 
-       // ----------------- replace existing INSERT block with this ده لان مكنش بيبعت بيانات التسليم اذا كانت نقدي -----------------
-        $created_by = $_SESSION['id'] ?? 0;
-        $updated_by = ($delivered_value === 'yes') ? $created_by : null;
+        // 5) تنفيذ الإدراج
+        $stmt = $pdo->prepare("INSERT INTO customers (name,mobile,city,address,notes,created_by,created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+        $stmt->execute([$name, $mobile_clean, $city, $address, $notes, $created_by]);
 
-        if ($has_notes_col) {
-            if ($delivered_value === 'yes') {
-                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, updated_by, updated_at, notes) VALUES (?, ?, ?, ?, NOW(), ?, NOW(), ?)");
-                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-                $stmt->bind_param("issiis", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $updated_by, $notes);
-            } else {
-                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, notes) VALUES (?, ?, ?, ?, NOW(), ?)");
-                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-                $stmt->bind_param("issis", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $notes);
-            }
-        } else {
-            if ($delivered_value === 'yes') {
-                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, NOW(), ?, NOW())");
-                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-                $stmt->bind_param("issii", $posted_customer_id, $delivered_value, $invoice_group, $created_by, $updated_by);
-            } else {
-                $stmt = $conn->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at) VALUES (?, ?, ?, ?, NOW())");
-                if (!$stmt) throw new Exception("تحضير إدخال الفاتورة فشل: " . $conn->error);
-                $stmt->bind_param("issi", $posted_customer_id, $delivered_value, $invoice_group, $created_by);
-            }
+        $newId = (int)$pdo->lastInsertId();
+        $pstmt = $pdo->prepare("SELECT id,name,mobile,city,address FROM customers WHERE id = ?");
+        $pstmt->execute([$newId]);
+        $new = $pstmt->fetch();
+
+        jsonOut(['ok' => true, 'msg' => 'تم إضافة العميل', 'customer' => $new]);
+
+    } catch (PDOException $e) {
+        // تعامل مع أخطاء الـ PDO بشكل آمن
+        // إذا كان خطأ قيد فريد (1062) ظهر رغم الفحص، نرجع رسالة مفهومة
+        $sqlErrNo = $e->errorInfo[1] ?? null;
+        if ($sqlErrNo == 1062) {
+            jsonOut(['ok' => false, 'error' => 'قيمة مكررة — رقم الموبايل مستخدم بالفعل.']);
         }
-       // -----------------end replace existing INSERT block -----------------
-
-        if (!$stmt->execute()) throw new Exception("تنفيذ إدخال الفاتورة فشل: " . $stmt->error);
-        $new_invoice_id = $stmt->insert_id; $stmt->close();
-
-        $insItem = $conn->prepare("INSERT INTO invoice_out_items (invoice_out_id, product_id, quantity, total_price, cost_price_per_unit, selling_price, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-        if (!$insItem) throw new Exception("تحضير إدخال البنود فشل: " . $conn->error);
-        $updStock = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?");
-        if (!$updStock) throw new Exception("تحضير تحديث المخزون فشل: " . $conn->error);
-
-        foreach ($valid_items as $it) {
-            $iid = $new_invoice_id; $pid = $it['product_id']; $qty = $it['quantity']; $total = $it['total_price']; $cp = $it['cost_price_per_unit']; $sp = $it['selling_price'];
-            if (!$insItem->bind_param("iidddd", $iid, $pid, $qty, $total, $cp, $sp)) throw new Exception("ربط بيانات إدخال بند فشل");
-            if (!$insItem->execute()) throw new Exception("فشل إدخال بند: " . $insItem->error);
-            if ($pid > 0) {
-                if (!$updStock->bind_param("did", $qty, $pid, $qty)) throw new Exception("ربط بيانات تحديث المخزون فشل");
-                if (!$updStock->execute()) throw new Exception("فشل تحديث المخزون: " . $updStock->error);
-                if ($updStock->affected_rows == 0) throw new Exception("الرصيد غير كافٍ للمنتج ID: $pid");
-            }
-        }
-
-        $insItem->close(); $updStock->close();
-        $conn->commit();
-
-        // respond with new invoice id (AJAX client will update next invoice number)
-        echo json_encode(['ok'=>true,'invoice_id'=>$new_invoice_id,'message'=>"تم إتمام الفاتورة #$new_invoice_id"]);
-        exit;
-    } catch (Exception $ex) {
-        $conn->rollback();
-        echo json_encode(['ok'=>false,'errors'=>["فشل إتمام الفاتورة: " . $ex->getMessage()]]);
-        exit;
+        // سجل الخطأ للخادم وارجع رسالة عامة للمستخدم
+        error_log("PDO error add_customer: " . $e->getMessage());
+        jsonOut(['ok' => false, 'error' => 'فشل إضافة العميل. حاول مرة أخرى.']);
+    } catch (Exception $e) {
+        error_log("Error add_customer: " . $e->getMessage());
+        jsonOut(['ok' => false, 'error' => 'فشل إضافة العميل. حاول مرة أخرى.']);
     }
 }
 
-// include UI parts
+    // 5) select customer (store in session) - POST
+    if ($action === 'select_customer' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $token = $_POST['csrf_token'] ?? '';
+        if (!hash_equals($_SESSION['csrf_token'], (string)$token)) jsonOut(['ok'=>false,'error'=>'رمز التحقق (CSRF) غير صالح.']);
+        $cid = (int)($_POST['customer_id'] ?? 0);
+        if ($cid <= 0) { unset($_SESSION['selected_customer']); jsonOut(['ok'=>true,'msg'=>'تم إلغاء اختيار العميل']); }
+        try {
+            $stmt = $pdo->prepare("SELECT id,name,mobile,city,address FROM customers WHERE id = ?");
+            $stmt->execute([$cid]);
+            $cust = $stmt->fetch();
+            if (!$cust) jsonOut(['ok'=>false,'error'=>'العميل غير موجود']);
+            $_SESSION['selected_customer'] = $cust;
+            jsonOut(['ok'=>true,'customer'=>$cust]);
+        } catch (Exception $e) {
+            jsonOut(['ok'=>false,'error'=>'تعذر اختيار العميل.']);
+        }
+    }
+
+    // 6) save_invoice (POST)
+    if ($action === 'save_invoice' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $token = $_POST['csrf_token'] ?? '';
+        if (!hash_equals($_SESSION['csrf_token'], (string)$token)) {
+            jsonOut(['ok'=>false,'error'=>'رمز التحقق (CSRF) غير صالح. أعد تحميل الصفحة وحاول مجدداً.']);
+        }
+        $customer_id = (int)($_POST['customer_id'] ?? 0);
+        $status = ($_POST['status'] ?? 'pending') === 'paid' ? 'paid' : 'pending';
+        $items_json = $_POST['items'] ?? '';
+        $notes = trim($_POST['notes'] ?? '');
+        $created_by = $_SESSION['user_id'] ?? null;
+
+        if ($customer_id <= 0) jsonOut(['ok'=>false,'error'=>'الرجاء اختيار عميل.']);
+        if (empty($items_json)) jsonOut(['ok'=>false,'error'=>'لا توجد بنود لإضافة الفاتورة.']);
+
+        $items = json_decode($items_json, true);
+        if (!is_array($items) || count($items) === 0) jsonOut(['ok'=>false,'error'=>'بنود الفاتورة غير صالحة.']);
+
+        try {
+            $pdo->beginTransaction();
+
+            // insert invoice header
+            $delivered = ($status === 'paid') ? 'yes' : 'no';
+            $invoice_group = 'group1';
+            $stmt = $pdo->prepare("INSERT INTO invoices_out (customer_id, delivered, invoice_group, created_by, created_at, notes) VALUES (?, ?, ?, ?, NOW(), ?)");
+            $stmt->execute([$customer_id, $delivered, $invoice_group, $created_by, $notes]);
+            $invoice_id = (int)$pdo->lastInsertId();
+
+            $totalRevenue = 0.0;
+            $totalCOGS = 0.0;
+
+            $insertItemStmt = $pdo->prepare("INSERT INTO invoice_out_items (invoice_out_id, product_id, quantity, total_price, cost_price_per_unit, selling_price, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+            $insertAllocStmt = $pdo->prepare("INSERT INTO sale_item_allocations (sale_item_id, batch_id, qty, unit_cost, line_cost, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+            $updateBatchStmt = $pdo->prepare("UPDATE batches SET remaining = ?, status = ?, adjusted_at = NOW(), adjusted_by = ? WHERE id = ?");
+            $selectBatchesStmt = $pdo->prepare("SELECT id, remaining, unit_cost FROM batches WHERE product_id = ? AND status = 'active' AND remaining > 0 ORDER BY received_at ASC, created_at ASC, id ASC FOR UPDATE");
+
+            foreach ($items as $it) {
+                $product_id = (int)($it['product_id'] ?? 0);
+                $qty = (float)($it['qty'] ?? 0);
+                $selling_price = (float)($it['selling_price'] ?? 0);
+                if ($product_id <= 0 || $qty <= 0) {
+                    $pdo->rollBack();
+                    jsonOut(['ok'=>false,'error'=>"بند غير صالح (معرف/كمية)."]);
+                }
+
+                // allocate FIFO
+                $selectBatchesStmt->execute([$product_id]);
+                $availableBatches = $selectBatchesStmt->fetchAll();
+                $need = $qty;
+                $allocations = [];
+                foreach ($availableBatches as $b) {
+                    if ($need <= 0) break;
+                    $avail = (float)$b['remaining'];
+                    if ($avail <= 0) continue;
+                    $take = min($avail, $need);
+                    $allocations[] = ['batch_id'=>(int)$b['id'],'take'=>$take,'unit_cost'=>(float)$b['unit_cost']];
+                    $need -= $take;
+                }
+                if ($need > 0.00001) {
+                    $pdo->rollBack();
+                    jsonOut(['ok'=>false,'error'=>"الرصيد غير كافٍ للمنتج (ID: {$product_id})."]);
+                }
+                $itemTotalCost = 0.0;
+                foreach ($allocations as $a) $itemTotalCost += $a['take'] * $a['unit_cost'];
+                $cost_price_per_unit = ($qty>0) ? ($itemTotalCost / $qty) : 0.0;
+                $lineTotalPrice = $qty * $selling_price;
+
+                // insert invoice item
+                $insertItemStmt->execute([$invoice_id, $product_id, $qty, $lineTotalPrice, $cost_price_per_unit, $selling_price]);
+                $invoice_item_id = (int)$pdo->lastInsertId();
+
+                // apply allocations and update batches
+                foreach ($allocations as $a) {
+                    // lock & get current remaining
+                    $stmtCur = $pdo->prepare("SELECT remaining FROM batches WHERE id = ? FOR UPDATE");
+                    $stmtCur->execute([$a['batch_id']]);
+                    $curRow = $stmtCur->fetch();
+                    $curRem = $curRow ? (float)$curRow['remaining'] : 0.0;
+                    $newRem = max(0.0, $curRem - $a['take']);
+                    $newStatus = ($newRem <= 0) ? 'consumed' : 'active';
+                    $updateBatchStmt->execute([$newRem, $newStatus, $created_by, $a['batch_id']]);
+
+                    $lineCost = $a['take'] * $a['unit_cost'];
+                    $insertAllocStmt->execute([$invoice_item_id, $a['batch_id'], $a['take'], $a['unit_cost'], $lineCost, $created_by]);
+                }
+
+                $totalRevenue += $lineTotalPrice;
+                $totalCOGS += $itemTotalCost;
+            }
+
+            $pdo->commit();
+            jsonOut(['ok'=>true,'msg'=>'تم إنشاء الفاتورة بنجاح.','invoice_id'=>$invoice_id,'total_revenue'=>round($totalRevenue,2),'total_cogs'=>round($totalCOGS,2)]);
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $err = $e->errorInfo[1] ?? null;
+            if ($err == 1062) jsonOut(['ok'=>false,'error'=>'قيمة مكررة: تحقق من الحقول الفريدة.']);
+            error_log("PDO Error save_invoice: " . $e->getMessage());
+            jsonOut(['ok'=>false,'error'=>'حدث خطأ أثناء حفظ الفاتورة.']);
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            error_log("Error save_invoice: " . $e->getMessage());
+            jsonOut(['ok'=>false,'error'=>'حدث خطأ أثناء حفظ الفاتورة.']);
+        }
+    }
+
+    // unknown action
+    jsonOut(['ok'=>false,'error'=>'action غير معروف']);
+}
+// end AJAX handling
+
+// Read selected customer from session (if any) to pre-fill UI
+$selected_customer_js = 'null';
+if (!empty($_SESSION['selected_customer']) && is_array($_SESSION['selected_customer'])) {
+    $sc = $_SESSION['selected_customer'];
+    $selected_customer_js = json_encode($sc, JSON_UNESCAPED_UNICODE);
+}
+
+// If user session id not set, created_by will be null - but we try:
+$created_by = $_SESSION['id'] ?? 0;
+
+// After this point, safe to include header and render HTML
 require_once BASE_DIR . 'partials/header.php';
-require_once BASE_DIR . 'partials/sidebar.php';
 ?>
+<!-- put csrf token in meta so JS reads it reliably -->
+<meta name="csrf-token" content="<?php echo htmlspecialchars($csrf_token); ?>">
+<?php require_once BASE_DIR . 'partials/sidebar.php'; ?>
 
+<!-- ========================= HTML / UI ========================= -->
 <style>
-
+:root{
+  --primary:#0b84ff; --accent:#7c3aed; --teal:#10b981; --amber:#f59e0b; --rose:#ef4444;
+  --bg:#f6f8fc; --surface:#fff; --text:#0b1220; --muted:#64748b; --border:rgba(2,6,23,0.06);
+}
+[data-theme="dark"] {
+  --bg:#0b1220; --surface:#0f1626; --text:#e6eef8; --muted:#94a3b8; --border:rgba(148,163,184,0.12);
+}
+body { background:var(--bg); color:var(--text); }
+.container-inv { padding:18px; font-family:Inter, 'Noto Naskh Arabic', Tahoma, Arial; }
+.grid { display:grid; grid-template-columns:360px 1fr 320px; gap:16px; height: calc(100vh - 160px); }
+.panel { background:var(--surface); padding:12px; border-radius:12px; box-shadow:0 10px 24px rgba(2,6,23,0.06); overflow:auto; }
+.prod-card { display:flex; justify-content:space-between; gap:10px; padding:10px; border:1px solid var(--border); border-radius:10px; margin-bottom:10px; background:var(--surface); }
+.badge { padding:6px 10px; border-radius:999px; font-weight:700; }
+.badge.warn { background:rgba(250,204,21,0.12); color:#7a4f00; }      /* تحذير */
+.badge.green { background:rgba(16,185,129,0.12); color:var(--teal); } /* فعال */
+.badge.red { background:rgba(239,68,68,0.13); color:#b91c1c; }        /* ملغي */
+.badge.gray { background:rgba(120,120,120,0.13); color:#374151; }     /* مستهلك */
+.badge.purple { background:rgba(168,85,247,0.13); color:#7c3aed; }    /* مرتجع */
+.btn{ padding:8px 10px; border-radius:8px; border:none; cursor:pointer; }
+.btn.primary{ background:linear-gradient(90deg,var(--primary),var(--accent)); color:#fff; }
+.btn.ghost{ background:transparent; border:1px solid var(--border); color:var(--text); }
+.table { width:100%; border-collapse:collapse; }
+.table th, .table td { padding:8px; border-bottom:1px solid var(--border); text-align:center; }
+.safe-hidden{ display:none; }
+.modal-backdrop{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background: rgba(2,6,23,0.55); z-index:1200; }
+.mymodal{ width:100%; max-width:1000px; background:var(--surface); padding:16px; border-radius:12px; max-height:86vh; overflow:auto; }
+.toast-wrap{ position:fixed; top:50px; left:50%; transform:translateX(10%); z-index:2000; display:flex; flex-direction:column; gap:8px; }
+.toast{ display: flex !important; padding:10px 14px; border-radius:8px; color:#fff; box-shadow:0 8px 20px rgba(2,6,23,0.12);}
+.toast.success{ background: linear-gradient(90deg,#10b981,#06b6d4); }
+.toast.error{  background: linear-gradient(90deg,#ef4444,#f97316); }
+.cust-card { border:1px solid var(--border); padding:8px; border-radius:8px; margin-bottom:8px; display:flex;justify-content:space-between;align-items:center;}
+.small-muted{ font-size:13px;color:var(--muted); }
+@media (max-width:1100px) { .grid{ grid-template-columns: 1fr; height:auto } }
 </style>
-<div class="invoice-out">
-  
- <div id="topMsg" role="status"></div>
 
- <div class="wrap print-area">
-  <div class="hdr">
-    <div>
-      <h2 style="margin:0"><?php echo e($page_title); ?></h2>
-      <div class="small-muted">رقم الفاتورة المتوقع: <strong id="nextInvoiceId">#<?php echo e($next_invoice_id ?: '—'); ?></strong></div>
-      <?php if ($invoice): ?>
-        <div class="small-muted">عرض فاتورة: #<?php echo intval($invoice['id']); ?></div>
-      <?php endif; ?>
-    </div>
-    <div>
-      <?php if (!$readonly): ?>
-        <button id="btnPrint" class="btn primary no-print">طباعة الفاتورة</button>
-      <?php else: ?>
-        <button id="btnPrint" class="btn primary">طباعة الفاتورة</button>
-      <?php endif; ?>
+<div class="container-inv">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div style="font-weight:900;font-size:20px">إنشاء فاتورة — FIFO</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <!-- theme toggle left for user, we won't auto include it in ajax -->
+      <button id="toggleThemeBtn" class="btn ghost" type="button">تبديل الثيم</button>
     </div>
   </div>
 
-  <?php if(!empty($_SESSION['message'])){ echo $_SESSION['message']; unset($_SESSION['message']); } ?>
-
-  <?php if ($readonly && $invoice): ?>
-    <div class="col" style="padding:18px">
-      <h3>عرض الفاتورة رقم #<?= intval($invoice['id']) ?></h3>
-      <?php
-        $created_at_raw = $invoice['created_at'] ?? '';
-        $created_at_display = '';
-        if ($created_at_raw) {
-          try {
-            $dt = new DateTime($created_at_raw);
-            $created_at_display = $dt->format('Y-m-d h:i A');
-          } catch(Exception $e) {
-            $created_at_display = e($created_at_raw);
-          }
-        }
-      ?>
-      <div style="margin-top:8px"><strong>التاريخ:</strong> <?= e($created_at_display ?: '—') ?></div>
-      <div style="margin-top:6px"><strong>الحالة:</strong> <?= e($invoice['delivered'] === 'yes' ? 'تم الدفع' : 'مؤجل') ?></div>
-
-      <div style="margin-top:12px"><strong>العميل:</strong>
-        <?php
-          if (!empty($invoice['customer_id'])) {
-            $st = $conn->prepare("SELECT name,mobile FROM customers WHERE id = ? LIMIT 1");
-            if ($st) { $st->bind_param("i",$invoice['customer_id']); $st->execute(); $c = $st->get_result()->fetch_assoc(); $st->close(); }
-            echo '<div class="small-muted">'.e($c['name'] ?? '—').' — '.e($c['mobile'] ?? '').'</div>';
-          } else {
-            echo '<div class="small-muted">غير محدد</div>';
-          }
-        ?>
+  <div class="grid" role="main">
+    <!-- Products Column -->
+    <div class="panel" aria-label="Products">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:800">المنتجات</div>
+        <input id="productSearchInput" placeholder="بحث باسم أو كود أو id..." style="padding:6px;border-radius:8px;border:1px solid var(--border);min-width:160px">
       </div>
-
-      <div style="margin-top:12px"><strong>ملاحظة الفاتورة:</strong>
-        <div class="small-muted"><?= nl2br(e($invoice['notes'] ?? '')) ?></div>
-      </div>
-
-      <h4 style="margin-top:14px">الأصناف</h4>
-      <table>
-        <thead><tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead>
-        <tbody>
-          <?php foreach ($items as $it):
-            $pn = '';
-            foreach ($products_list as $pp) if ($pp['id']==$it['product_id']) { $pn = $pp['name']; break; }
-          ?>
-            <tr>
-              <td><?= e($pn ?: ('#' . intval($it['product_id']))) ?></td>
-              <td><?= e($it['quantity']) ?></td>
-              <td><?= number_format($it['selling_price'],2) ?></td>
-              <td><?= number_format($it['total_price'],2) ?></td>
-            </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
+      <div id="productsList" style="padding-bottom:12px"></div>
     </div>
-  <?php else: ?>
 
-  <form id="invoiceForm" method="post" action="<?php echo e($_SERVER['PHP_SELF']); ?>">
-    <input type="hidden" name="csrf_token" value="<?php echo e($csrf_token); ?>">
-    <input type="hidden" id="customer_id" name="customer_id" value="<?php echo e($customer['id'] ?? $session_customer_id ?? ''); ?>">
-    <input type="hidden" id="temp_customer_name" name="temp_customer_name" value="">
-    <input type="hidden" name="invoice_group" value="<?php echo e($invoice['invoice_group'] ?? 'group1'); ?>">
-    <input type="hidden" name="confirm_complete" id="confirm_complete" value="1">
-
-    <div class="columns">
-      <!-- PRODUCTS -->
-      <div class="col products">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <strong>المنتجات</strong>
-          <input type="text" id="product_search" placeholder="بحث باسم أو كود..." style="padding:6px;border:1px solid #ddd;border-radius:6px;width:55%">
+    <!-- Invoice Column -->
+    <div class="panel" aria-label="Invoice">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <label><input type="radio" name="invoice_state" value="pending" checked> مؤجل</label>
+          <label style="margin-left:10px"><input type="radio" name="invoice_state" value="paid"> تم الدفع</label>
         </div>
-        <div id="product_list">
-          <?php foreach($products_list as $p):
-            $out = floatval($p['current_stock']) <= 0 ? ' out-of-stock' : '';
-          ?>
-            <div class="product-item<?php echo $out; ?>" data-id="<?php echo (int)$p['id']; ?>"
-                 data-name="<?php echo e($p['name']); ?>"
-                 data-code="<?php echo e($p['product_code']); ?>"
-                 data-price="<?php echo floatval($p['selling_price']); ?>"
-                 data-cost="<?php echo floatval($p['cost_price']); ?>"
-                 data-stock="<?php echo floatval($p['current_stock']); ?>">
-              <div>
-                <div style="font-weight:700"><?php echo e($p['name']); ?></div>
-                <div class="small-muted">كود: <?php echo e($p['product_code']); ?> — رصيد: <span class="stock-number"><?php echo e($p['current_stock']); ?></span></div>
-              </div>
-              <div style="text-align:left;font-weight:700">
-                <?php echo number_format($p['selling_price'],2); ?> ج.م
-                <?php if(floatval($p['current_stock']) <= 0): ?>
-                  <div class="badge-out">نفذ</div>
-                <?php endif; ?>
-              </div>
-            </div>
-          <?php endforeach; ?>
-        </div>
+        <strong>فاتورة جديدة</strong>
       </div>
 
-      <!-- ITEMS -->
-      <div class="col items">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div>
-            <strong>بنود الفاتورة</strong><br>
-            <span class="small-muted">اضغط على المنتج لإضافته — اختيار مكرر يزيد الكمية</span>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <!-- <label>حالة الفاتورة</laظbel> -->
-            <!-- <select id="delivered" name="delivered" style="padding:6px;border-radius:6px;border:1px solid #ddd">
-              <option value="no">مؤجل</option>
-              <option value="yes">تم الدفع</option>
-            </select> -->
-<div class="radio-group ">
-  <strong>الحالة:</strong>
-
-  <label class="radio-wrapper   " for="del_yes">
-    <input id="del_yes" type="radio" name="delivered" value="yes" <?php echo ($delivered_val === 'yes') ? 'checked' : ''; ?>>
-    <span>تم الدفع</span>
-  </label>
-
-  <label class="radio-wrapper mx-1" for="del_no">
-    <input id="del_no" type="radio" name="delivered" value="no" <?php echo ($delivered_val === 'no') ? 'checked' : ''; ?>>
-    <span>مؤجل</span>
-  </label>
-</div>
-
-          </div>
-        </div>
-
-        <table>
-          <thead><tr><th>المنتج</th><th class="qtycol">الكمية</th><th class="unitpricecol">سعر البيع</th><th class="uniteCost">سعر الشراء</th><th>الإجمالي</th><th class="no-print">حذف</th></tr></thead>
-          <tbody id="itemsTableBody">
-            <?php if(!empty($items)): foreach($items as $idx=>$it):
-                $pn=''; foreach($products_list as $pp) if($pp['id']==$it['product_id']) { $pn=$pp['name']; break; }
-            ?>
-              <tr data-product-id="<?php echo (int)$it['product_id']; ?>">
-                <td>
-                  <input type="hidden" name="items[<?php echo $idx;?>][product_id]" value="<?php echo (int)$it['product_id']; ?>">
-                  <?php echo e($pn ?: ('#'.(int)$it['product_id'])); ?>
-                </td>
-                <td class="qtycol"><input name="items[<?php echo $idx;?>][quantity]" class="qty" type="number" step="any" min="0" value="<?php echo e($it['quantity']); ?>"></td>
-                <td class="unitpricecol"><input name="items[<?php echo $idx;?>][selling_price]" class="unit-price" type="number" step="0.01" min="0" value="<?php echo e($it['selling_price']); ?>"></td>
-                <td><input name="items[<?php echo $idx;?>][cost_price_per_unit]" class="cost-price" type="number" step="0.01" min="0" value="<?php echo e($it['cost_price_per_unit']); ?>"></td>
-                <td class="line-total"><?php echo number_format($it['total_price'],2); ?></td>
-                <td class="no-print"><button type="button" class="btn ghost remove-row">حذف</button></td>
-              </tr>
-            <?php endforeach; else: ?>
-              <tr id="no-items-row"><td colspan="6" class="no-items">لا توجد بنود بعد — اختر منتجاً لإضافته.</td></tr>
-            <?php endif; ?>
-          </tbody>
+      <div style="overflow:auto;max-height:56vh">
+        <table class="table" id="invoiceTable" aria-label="Invoice items">
+          <thead class="center">
+            <tr><th>المنتج</th><th>كمية</th><th>سعر بيع</th><th>تفاصيل FIFO</th><th>الإجمالي</th><th>حذف</th></tr>
+          </thead>
+          <tbody id="invoiceTbody"></tbody>
         </table>
-
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
-          <div>
-            <button type="button" id="openConfirm" class="btn success">إتمام الفاتورة</button>
-            <button type="button" id="clearDraft" class="btn ghost">تفريغ البنود</button>
-          </div>
-          <div>
-            <div><strong>الإجمالي:</strong> <span id="total_before">0.00</span> ج.م</div>
-          </div>
-        </div>
-
-        <div style="margin-top:12px">
-          <label>ملاحظات الفاتورة (اختياري)</label>
-          <textarea name="notes" id="notes" class="note-box" rows="3"><?php echo e($session_notes ?? ''); ?></textarea>
-        </div>
       </div>
 
-      <!-- CUSTOMERS -->
-      <div class="col customers">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <strong>العملاء</strong>
-          <div style="display:flex;gap:6px">
-            <button type="button" id="openAddCustomerModal" class="btn ghost">إضافة</button>
-            <!-- <a href="<?php echo e(BASE_URL); ?>customer/insert.php" class="btn ghost" target="_blank">صفحة الإضافة</a> -->
-          </div>
-        </div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+        <textarea id="invoiceNotes" placeholder="ملاحظات (لن تُطبع)" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border)"></textarea>
+      </div>
 
-        <div style="margin-bottom:8px;display:flex;gap:6px;align-items:center">
-          <input type="text" id="customer_search" placeholder="ابحث باسم أو موبايل..." style="padding:6px;border:1px solid #ddd;border-radius:6px;width:100%">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <div><strong>إجمالي الكمية:</strong> <span id="sumQty">0</span></div>
+        <div><strong>إجمالي البيع:</strong> <span id="sumSell">0.00</span> ج</div>
+        <div style="display:flex;gap:8px">
+          <button id="clearBtn" class="btn ghost">تفريغ</button>
+          <button id="previewBtn" class="btn ghost">معاينة</button>
+          <button id="confirmBtn" class="btn primary">تأكيد الفاتورة</button>
         </div>
-
-        <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
-          <button type="button" id="cashCustomerBtn" class="btn">نقدي (ثابت)</button>
-          <div id="selectedCustomerBox" class="small-muted">
-            <?php if($customer): ?>
-              <div>العميل الحالي: <strong><?php echo e($customer['name']); ?></strong> — <?php echo e($customer['mobile']); ?></div>
-              <div class="small-muted"><?php echo e($customer['city']); ?> — <?php echo e($customer['address']); ?></div>
-            <?php else: ?>
-              <div>لا يوجد عميل محدد.</div>
-            <?php endif; ?>
-          </div>
-          <div class="small-muted">اضغط على "اختر" عند العميل لتحديده، أو استخدم "نقدي (ثابت)" لوضع العميل النقدي مباشرة في الفاتورة.</div>
-        </div>
-
-        <div id="customer_list"><div class="small-muted">تحميل العملاء...</div></div>
       </div>
     </div>
-  </form>
 
-  <?php endif; ?>
+    <!-- Customers Column -->
+    <div class="panel" aria-label="Customers">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong>العملاء</strong>
+        <div style="display:flex;gap:6px">
+          <button id="openAddCustomerBtn" class="btn ghost" type="button">إضافة</button>
+        </div>
+      </div>
 
+      <div style="margin-bottom:8px;display:flex;gap:6px;align-items:center">
+        <input type="text" id="customerSearchInput" placeholder="ابحث باسم أو موبايل..." style="padding:6px;border:1px solid var(--border);border-radius:6px;width:100%">
+      </div>
+
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+        <button id="cashCustomerBtn" class="btn primary" type="button">نقدي (ثابت)</button>
+        <div id="selectedCustomerBox" class="small-muted" style="padding:8px;border:1px solid var(--border);border-radius:8px;">
+          <div>العميل الحالي: <strong id="selectedCustomerName">لم يتم الاختيار</strong></div>
+          <div id="selectedCustomerDetails" class="small-muted"></div>
+          <div style="margin-top:6px"><button id="btnUnselectCustomer" type="button" class="btn ghost">إلغاء اختيار العميل</button></div>
+        </div>
+      </div>
+
+      <div id="customersList" style="margin-top:12px"></div>
+    </div>
+  </div>
 </div>
 
-<!-- Add Customer Modal -->
-<!-- Toast Container -->
+<!-- Batches list modal (renamed not to conflict) -->
+<div id="batchesModal_backdrop" class="modal-backdrop">
+  <div class="mymodal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><strong id="batchesTitle">دفعات</strong><div class="small" id="batchesInfo"></div></div>
+      <div><button id="closeBatchesBtn" class="btn ghost">إغلاق</button></div>
+    </div>
+    <div id="batchesTable" style="margin-top:10px"></div>
+  </div>
+</div>
 
-<!-- Add Customer Modal -->
-<div id="modalAddCustomer" class="modal-backdrop" aria-hidden="true">
+<!-- Batch detail modal -->
+<div id="batchDetailModal_backdrop" class="modal-backdrop">
+  <div class="mymodal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><strong id="batchTitle">تفاصيل الدفعة</strong></div>
+      <div><button id="closeBatchDetailBtn" class="btn ghost">إغلاق</button></div>
+    </div>
+    <div id="batchDetailBody" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- Add Customer modal (avoid bootstrap name) -->
+<div id="addCustomer_backdrop" class="modal-backdrop">
   <div class="mymodal">
     <h3>إضافة عميل جديد</h3>
     <div id="addCustMsg"></div>
-    <div class="form-group">
-      <input id="new_name" placeholder="الاسم" class="note-box">
-      <input id="new_mobile" placeholder="رقم الموبايل (11 رقم)" class="note-box">
-      <input id="new_city" placeholder="المدينة" class="note-box">
-      <input id="new_address" placeholder="العنوان" class="note-box">
-        <textarea id="new_notes" placeholder="ملاحظات عن العميل (اختياري)" class="note-box" rows="3"></textarea>
-
-      <div class="actions">
+    <div style="display:grid;gap:8px;margin-top:8px">
+      <input id="new_name" placeholder="الاسم" class="note-box" style="padding:8px;border:1px solid var(--border);border-radius:8px">
+      <input id="new_mobile" placeholder="رقم الموبايل (11 رقم)" class="note-box" style="padding:8px;border:1px solid var(--border);border-radius:8px">
+      <input id="new_city" placeholder="المدينة" class="note-box" style="padding:8px;border:1px solid var(--border);border-radius:8px">
+      <input id="new_address" placeholder="العنوان" class="note-box" style="padding:8px;border:1px solid var(--border);border-radius:8px">
+      <textarea id="new_notes" placeholder="ملاحظات عن العميل (اختياري)" class="note-box" rows="3" style="padding:8px;border:1px solid var(--border);border-radius:8px"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
         <button id="closeAddCust" type="button" class="btn ghost">إلغاء</button>
         <button id="submitAddCust" type="button" class="btn primary">حفظ وإختيار</button>
       </div>
@@ -562,539 +531,409 @@ require_once BASE_DIR . 'partials/sidebar.php';
   </div>
 </div>
 
-<!-- Confirm Modal -->
-<div id="modalConfirm" class="modal-backdrop" aria-hidden="true">
+<!-- Confirm modal -->
+<div id="confirmModal_backdrop" class="modal-backdrop">
   <div class="mymodal">
     <h3>تأكيد إتمام الفاتورة</h3>
     <div id="confirmClientPreview"></div>
-    <div id="confirmItemsPreview" class="modal-preview"></div>
-    <div class="modal-footer">
-      <div>
-        <button id="confirmCancel" type="button" class="btn ghost">إلغاء</button>
-        <button id="confirmSend" type="button" class="btn success">تأكيد وإرسال</button>
-      </div>
+    <div id="confirmItemsPreview" style="margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+      <div><button id="confirmCancel" type="button" class="btn ghost">إلغاء</button><button id="confirmSend" type="button" class="btn primary" style="margin-left:8px">تأكيد وإرسال</button></div>
       <div><strong>الإجمالي:</strong> <span id="confirm_total_before">0.00</span></div>
     </div>
   </div>
 </div>
 
+<!-- Toasts -->
+<div class="toast-wrap" id="toastWrap" aria-live="polite" aria-atomic="true"></div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function(){
+document.addEventListener('DOMContentLoaded', function() {
+  // small helpers
+  const $ = id => document.getElementById(id);
+  function onId(id, fn){ const el = document.getElementById(id); if (el) fn(el); return el; }
+  function getCsrfToken(){ const m = document.querySelector('meta[name="csrf-token"]'); return m ? m.getAttribute('content') : ''; }
+  function showToast(msg, type='success', timeout=2000){
+    const wrap = $('toastWrap');
+    if (!wrap) return console.warn('no toastWrap');
+    const el = document.createElement('div');
+    el.className = 'toast ' + (type==='error'?'error':'success');
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(()=> { el.style.opacity = 0; setTimeout(()=> el.remove(), 500); }, timeout);
+  }
+  function esc(s){ return (s==null)?'':String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+  function fmt(n){ return Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function debounce(fn,t=250){ let to; return (...a)=>{ clearTimeout(to); to=setTimeout(()=>fn.apply(this,a),t); } }
 
-  function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replace(/[&<>"']/g,function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; }); }
-  function debounce(fn,delay){ let t; return function(){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,arguments),delay); }; }
-
-  const topMsg = document.getElementById('topMsg');
-  function showTopMsg(type, text, timeout=3500){
-    topMsg.className = ''; topMsg.classList.add(type === 'success' ? 'success' : 'error');
-    topMsg.textContent = text; topMsg.style.display = 'block';
-    if (timeout>0) setTimeout(()=>{ topMsg.style.display = 'none'; }, timeout);
+  // safe fetchJson that throws on non-json
+  async function fetchJson(url, opts){
+    const res = await fetch(url, opts);
+    const txt = await res.text();
+    try { return JSON.parse(txt); } catch(e) { console.error('Invalid JSON response:', txt); throw new Error('Invalid JSON from server'); }
   }
 
-  const customerListEl = document.getElementById('customer_list');
-  const customerSearch = document.getElementById('customer_search');
-  const selectedCustomerBox = document.getElementById('selectedCustomerBox');
-  const customerIdInput = document.getElementById('customer_id');
-  const tempCustomerInput = document.getElementById('temp_customer_name');
-  const cashBtn = document.getElementById('cashCustomerBtn');
-  const modalAdd = document.getElementById('modalAddCustomer');
-  const openAddBtn = document.getElementById('openAddCustomerModal');
-  const closeAddBtn = document.getElementById('closeAddCust');
-  const submitAddBtn = document.getElementById('submitAddCust');
-  const btnPrint = document.getElementById('btnPrint');
-  const clearDraftBtn = document.getElementById('clearDraft');
-  const openConfirmBtn = document.getElementById('openConfirm');
-  const modalConfirm = document.getElementById('modalConfirm');
-  const confirmCancel = document.getElementById('confirmCancel');
-  const confirmSend = document.getElementById('confirmSend');
+  // state
+  let products = [], customers = [], invoiceItems = [];
+  let selectedCustomer = <?php echo $selected_customer_js; ?> || null;
 
-  const itemsBody = document.getElementById('itemsTableBody');
-  const productList = Array.from(document.querySelectorAll('.product-item')).map(el=>({
-    id: parseInt(el.dataset.id,10), name: el.dataset.name, code: el.dataset.code,
-    price: parseFloat(el.dataset.price||0), cost: parseFloat(el.dataset.cost||0), stock: parseFloat(el.dataset.stock||0), el: el
+  // --------- load products ----------
+  async function loadProducts(q='') {
+    try {
+      const json = await fetchJson(location.pathname + '?action=products' + (q ? '&q=' + encodeURIComponent(q) : ''), { credentials: 'same-origin' });
+      if (!json.ok) { showToast(json.error || 'فشل جلب المنتجات','error'); return; }
+      products = json.products || [];
+      renderProducts();
+    } catch (e) { console.error(e); showToast('تعذر جلب المنتجات','error'); }
+  }
+
+  function renderProducts() {
+    const wrap = $('productsList'); if (!wrap) return;
+    wrap.innerHTML = '';
+    products.forEach(p=>{
+      const rem = parseFloat(p.remaining_active || 0);
+      const consumed = rem <= 0;
+      const div = document.createElement('div');
+      div.className = 'prod-card';
+      div.innerHTML = `<div>
+          <div style="font-weight:800">${esc(p.name)}</div>
+          <div class="small-muted">كود • #${esc(p.product_code)} • ID:${p.id}</div>
+          <div class="small-muted">رصيد دخل: ${fmt(p.current_stock)}</div>
+          <div class="small-muted">متبقي (Active): ${fmt(rem)}</div>
+          <div class="small-muted">آخر شراء: ${esc(p.last_batch_date||'-')} • ${fmt(p.last_purchase_price||0)} جنيه</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          ${consumed ? '<div class="badge warn">مستهلك</div>' : `<button class="btn primary add-btn" data-id="${p.id}" data-name="${esc(p.name)}" data-sale="${p.last_sale_price||0}">أضف</button>`}
+          <button class="btn ghost batches-btn" data-id="${p.id}">دفعات</button>
+        </div>`;
+      wrap.appendChild(div);
+    });
+    // attach
+    document.querySelectorAll('.add-btn').forEach(b => b.addEventListener('click', e=>{
+      const id = b.dataset.id; const name = b.dataset.name; const sale = parseFloat(b.dataset.sale||0);
+      addInvoiceItem({product_id:id, product_name:name, qty:1, selling_price:sale});
+    }));
+    document.querySelectorAll('.batches-btn').forEach(b => b.addEventListener('click', e=>{
+      openBatchesModal(parseInt(b.dataset.id));
+    }));
+  }
+
+  // search product input
+  onId('productSearchInput', el => el.addEventListener('input', debounce(()=> loadProducts(el.value.trim()), 400)));
+
+  // -------- invoice items handling ----------
+  function addInvoiceItem(item){
+    const idx = invoiceItems.findIndex(x => x.product_id == item.product_id);
+    if (idx >= 0) invoiceItems[idx].qty = Number(invoiceItems[idx].qty) + Number(item.qty);
+    else invoiceItems.push({...item});
+    renderInvoice();
+  }
+  function renderInvoice(){
+    const tbody = $('invoiceTbody'); if (!tbody) return;
+    tbody.innerHTML = '';
+    invoiceItems.forEach((it, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td style="text-align:right">${esc(it.product_name)}</td>
+        <td><input type="number" class="qty" data-idx="${i}" value="${it.qty}" step="0.0001" style="width:100px"></td>
+        <td><input type="number" class="price" data-idx="${i}" value="${Number(it.selling_price).toFixed(2)}" step="0.01" style="width:110px"></td>
+        <td><button class="btn ghost fifo-btn" data-idx="${i}">تفاصيل FIFO</button></td>
+        <td class="line-total">${fmt(it.qty * it.selling_price)}</td>
+        <td><button class="btn ghost remove-btn" data-idx="${i}">حذف</button></td>`;
+      tbody.appendChild(tr);
+    });
+    // bind
+    document.querySelectorAll('.qty').forEach(el => el.addEventListener('input', e=>{
+      const idx = e.target.dataset.idx; invoiceItems[idx].qty = parseFloat(e.target.value || 0); renderInvoice();
+    }));
+    document.querySelectorAll('.price').forEach(el => el.addEventListener('input', e=>{
+      const idx = e.target.dataset.idx; invoiceItems[idx].selling_price = parseFloat(e.target.value || 0); renderInvoice();
+    }));
+    document.querySelectorAll('.remove-btn').forEach(b => b.addEventListener('click', e=>{
+      const idx = b.dataset.idx; invoiceItems.splice(idx,1); renderInvoice();
+    }));
+    document.querySelectorAll('.fifo-btn').forEach(b => b.addEventListener('click', e=>{
+      openFifoPreview(parseInt(b.dataset.idx));
+    }));
+
+    // totals
+    let sumQ = 0, sumS = 0;
+    invoiceItems.forEach(it => { sumQ += Number(it.qty || 0); sumS += Number(it.qty || 0) * Number(it.selling_price || 0); });
+    onId('sumQty', el => el.textContent = sumQ);
+    onId('sumSell', el => el.textContent = fmt(sumS));
+  }
+
+  onId('clearBtn', el => el.addEventListener('click', ()=> {
+    if (!confirm('هل تريد تفريغ بنود الفاتورة؟')) return;
+    invoiceItems = []; renderInvoice();
   }));
 
-  const csrf = '<?php echo e($csrf_token); ?>';
-  const CASH_CUSTOMER_ID = <?php echo json_encode(intval($CASH_CUSTOMER_ID)); ?>;
-  const CASH_CUSTOMER_NAME = <?php echo json_encode($CASH_CUSTOMER_NAME); ?>;
-
-  // Helper to render stock number and out-of-stock class
-  function renderProductStock(p) {
-    try {
-      const stockEl = p.el.querySelector('.stock-number');
-      if (stockEl) stockEl.textContent = String(p.stock);
-      if (p.stock <= 0) {
-        p.el.classList.add('out-of-stock');
-        if (!p.el.querySelector('.badge-out')) {
-          const div = document.createElement('div'); div.className='badge-out'; div.textContent='نفذ'; p.el.appendChild(div);
-        }
-      } else {
-        p.el.classList.remove('out-of-stock');
-        const badge = p.el.querySelector('.badge-out'); if (badge) badge.remove();
-      }
-      p.el.dataset.stock = p.stock;
-    } catch(e){ console.error(e); }
-  }
-
-  // initial render for stocks
-  productList.forEach(p=> renderProductStock(p));
-
-  // products add - block clicks on out-of-stock
-  document.getElementById('product_list').addEventListener('click', function(e){
-    const p = e.target.closest('.product-item'); if (!p) return;
-    const pid = parseInt(p.dataset.id,10);
-    const prod = productList.find(x=> x.id === pid);
-    if (!prod) return;
-    if (prod.stock <= 0) { showTopMsg('error','المنتج غير متاح (الرصيد صفر).',3000); return; }
-    addOrIncreaseItem(pid);
-  });
-
-  const productSearch = document.getElementById('product_search');
-  productSearch?.addEventListener('input', debounce(e=>{
-    const q = e.target.value.trim().toLowerCase();
-    productList.forEach(p=> { p.el.style.display = (!q || p.name.toLowerCase().includes(q) || (p.code||'').toLowerCase().includes(q)) ? '' : 'none'; });
-  },150));
-
-  function addOrIncreaseItem(pid, qty=1) {
-    const p = productList.find(x=>x.id===pid);
-    if (!p) return;
-    if (p.stock <= 0) { showTopMsg('error','لا يمكن إضافة هذا المنتج — نفذ',3000); return; }
-    const existing = Array.from(itemsBody.querySelectorAll('tr')).find(r=> parseInt(r.dataset.productId||0,10) === pid );
-    if (existing) {
-      const qel = existing.querySelector('.qty'); qel.value = (parseFloat(qel.value)||0) + qty; checkRowStock(existing, p.stock); recalcTotals(); return;
-    }
-    const noRow = document.getElementById('no-items-row'); if (noRow) noRow.remove();
-    const idx = itemsBody.querySelectorAll('tr').length;
-    const tr = document.createElement('tr'); tr.dataset.productId = pid;
-    tr.innerHTML = `<td><input type="hidden" name="items[${idx}][product_id]" value="${pid}">${escapeHtml(p.name)}</td>
-      <td class="qtycol"><input name="items[${idx}][quantity]" class="qty" type="number" step="any" min="0" value="${qty}"></td>
-      <td class="unitpricecol"><input name="items[${idx}][selling_price]" class="unit-price" type="number" step="0.01" min="0" value="${p.price}"></td>
-      <td><input name="items[${idx}][cost_price_per_unit]" class="cost-price" type="number" step="0.01" min="0" value="${p.cost}"></td>
-      <td class="line-total">0.00</td>
-      <td class="no-print"><button type="button" class="btn ghost remove-row">حذف</button></td>`;
-    itemsBody.appendChild(tr);
-    attachRowHandlers(tr);
-    checkRowStock(tr, p.stock);
-    recalcTotals();
-  }
-
-  function attachRowHandlers(tr){
-    const qty = tr.querySelector('.qty'); const up = tr.querySelector('.unit-price'); const rm = tr.querySelector('.remove-row');
-    if (qty) qty.addEventListener('input', function(){ const pid = parseInt(tr.dataset.productId||0,10); const p = productList.find(x=>x.id===pid); if (p) checkRowStock(tr, p.stock); recalcTotals(); });
-    if (up) up.addEventListener('input', recalcTotals);
-    if (rm) rm.addEventListener('click', function(){ tr.remove(); if (itemsBody.querySelectorAll('tr').length===0){ const r=document.createElement('tr'); r.id='no-items-row'; r.innerHTML='<td colspan=\"6\" class=\"no-items\">لا توجد بنود بعد — اختر منتجاً.</td>'; itemsBody.appendChild(r); } recalcTotals(); });
-  }
-
-  function checkRowStock(row, stock){
-    const qty = parseFloat(row.querySelector('.qty').value)||0;
-    row.classList.remove('insufficient');
-    const prevWarn = row.querySelector('.stock-warn');
-    if (prevWarn) prevWarn.remove();
-    if (stock !== null && !isNaN(stock) && qty > stock) {
-      row.classList.add('insufficient');
-      const td = row.querySelector('td');
-      const div = document.createElement('div'); div.className='stock-warn'; div.textContent = `المطلوب: ${qty} — المتاح: ${stock}`;
-      td.appendChild(div);
-    }
-  }
-
-  function recalcTotals(){
+  onId('previewBtn', el => el.addEventListener('click', ()=> {
+    if (invoiceItems.length === 0) return showToast('لا توجد بنود للمعاينة','error');
+    let html = `<h3>معاينة الفاتورة</h3><table style="width:100%;border-collapse:collapse"><thead><tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>`;
     let total = 0;
-    itemsBody.querySelectorAll('tr').forEach(r=>{
-      if (r.id==='no-items-row') return;
-      const q = parseFloat(r.querySelector('.qty').value)||0; const p = parseFloat(r.querySelector('.unit-price').value)||0;
-      const line = q*p; r.querySelector('.line-total').textContent = line.toFixed(2); total += line;
-    });
-    document.getElementById('total_before').textContent = total.toFixed(2);
-  }
+    invoiceItems.forEach(it=> { const line = (it.qty||0)*(it.selling_price||0); total += line; html += `<tr><td>${esc(it.product_name)}</td><td>${fmt(it.qty)}</td><td>${fmt(it.selling_price)}</td><td>${fmt(line)}</td></tr>` });
+    html += `</tbody></table><div style="margin-top:8px"><strong>الإجمالي: ${fmt(total)}</strong></div>`;
+    onId('batchDetailBody', el => el.innerHTML = html);
+    onId('batchTitle', el => el.textContent = 'معاينة الفاتورة');
+    onId('batchDetailModal_backdrop', el => el.style.display = 'flex');
+  }));
 
-  itemsBody.querySelectorAll('tr').forEach(tr=>{ if (tr.id!=='no-items-row') attachRowHandlers(tr); });
-  recalcTotals();
+  // confirm modal open
+  onId('confirmBtn', el => el.addEventListener('click', ()=> {
+    if (!selectedCustomer) return showToast('الرجاء اختيار عميل','error');
+    if (invoiceItems.length === 0) return showToast('لا توجد بنود لحفظ الفاتورة','error');
+    // build preview
+    onId('confirmClientPreview', el => el.innerHTML = `<div class="cust-card"><div><strong>👤 ${esc(selectedCustomer.name)}</strong><div class="small-muted">📞 ${esc(selectedCustomer.mobile)} • ${esc(selectedCustomer.city)}</div><div class="small-muted">📍 ${esc(selectedCustomer.address)}</div></div></div>`);
+    let html = `<div style="max-height:360px;overflow:auto"><table style="width:100%"><thead><tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>`;
+    let total = 0;
+    invoiceItems.forEach(it=> { const line = (it.qty||0)*(it.selling_price||0); total += line; html += `<tr><td>${esc(it.product_name)}</td><td>${fmt(it.qty)}</td><td>${fmt(it.selling_price)}</td><td>${fmt(line)}</td></tr>`; });
+    html += `</tbody></table></div>`;
+    onId('confirmItemsPreview', el => el.innerHTML = html);
+    onId('confirm_total_before', el => el.textContent = fmt(total));
+    onId('confirmModal_backdrop', el => el.style.display = 'flex');
+  }));
 
-  // Customers
-  async function loadCustomers(q=''){
-    customerListEl.innerHTML = '<div class="small-muted">تحميل...</div>';
+  // confirm send
+  onId('confirmSend', btn => btn.addEventListener('click', async ()=>{
+    // prepare payload
+    const payload = invoiceItems.map(it => ({ product_id: it.product_id, qty: Number(it.qty), selling_price: Number(it.selling_price) }));
+    const fd = new FormData();
+    fd.append('action','save_invoice');
+    fd.append('csrf_token', getCsrfToken());
+    fd.append('customer_id', selectedCustomer.id);
+    fd.append('status', document.querySelector('input[name="invoice_state"]:checked').value);
+    fd.append('notes', $('invoiceNotes') ? $('invoiceNotes').value : '');
+    fd.append('items', JSON.stringify(payload));
     try {
-      const params = new URLSearchParams({action:'search_customers', q});
-      // Using location.pathname sends request to the same script file (path only), which is acceptable for this in-page AJAX.
-      const res = await fetch(location.pathname + '?' + params.toString());
-      const data = await res.json();
-      if (!data.ok){ customerListEl.innerHTML = '<div class="small-muted">خطأ في التحميل</div>'; return; }
-      if (!data.results.length){ customerListEl.innerHTML = '<div class="small-muted">لا يوجد عملاء</div>'; return; }
-      customerListEl.innerHTML = '';
-      data.results.forEach(c=> customerListEl.appendChild(buildCustomerElement(c)));
-    } catch(err) {
-      customerListEl.innerHTML = '<div class="small-muted">خطأ في التحميل</div>';
-      console.error(err);
+      const res = await fetch(location.pathname + '?action=save_invoice', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const txt = await res.text();
+      let json; try { json = JSON.parse(txt); } catch(e) { console.error('Invalid response', txt); throw new Error('Invalid JSON'); }
+      if (!json.ok) { showToast(json.error || 'فشل الحفظ','error'); return; }
+      showToast(json.msg || 'تم الحفظ','success');
+      // reset
+      invoiceItems = []; renderInvoice();
+      loadProducts();
+      onId('confirmModal_backdrop', el => el.style.display = 'none');
+      // show options: new invoice or go to invoices
+      setTimeout(()=> {
+        if (confirm('تمت إضافة الفاتورة بنجاح. هل تريد إنشاء فاتورة جديدة الآن؟ (إلغاء للانتقال لعرض الفاتورة)')) {
+          // new invoice: clear UI
+          invoiceItems = []; renderInvoice();
+          onId('invoiceNotes', n => n.value = '');
+        } else {
+            // go to invoices page based on status (dynamic path)
+            const st = document.querySelector('input[name="invoice_state"]:checked').value;
+            // Use dynamic path based on current location
+            const base = location.pathname.replace(/\/invoices_out\/create_invoice\.php.*$/, '/admin');
+            if (st === 'paid') window.location.href = base + '/delivered_invoices.php';
+            else window.location.href = base + '/pending_invoices.php';
+        }
+      }, 300);
+    } catch (e) {
+      console.error(e);
+      showToast('خطأ في الاتصال أو استجابة غير صحيحة','error');
     }
-  }
+  }));
 
-  function buildCustomerElement(c){
-    const el = document.createElement('div'); el.className = 'customer-item'; el.dataset.cid = c.id;
-    el.innerHTML = `<div><div style="font-weight:700">${escapeHtml(c.name)}</div><div class="small-muted">${escapeHtml(c.mobile)} — ${escapeHtml(c.city)}</div></div>
-                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div>`;
-    el.querySelector('.choose-cust').addEventListener('click', function(e){
-      e.preventDefault();
-      markCustomerSelected(el, c);
-      if (cashBtn) cashBtn.classList.remove('selected');
-    });
-    el.addEventListener('dblclick', ()=> el.querySelector('.choose-cust').click() );
-    return el;
-  }
+  onId('confirmCancel', btn => btn.addEventListener('click', ()=> onId('confirmModal_backdrop', m => m.style.display = 'none')));
 
-  function markCustomerSelected(el, customerObj){
-    document.querySelectorAll('#customer_list .customer-item').forEach(ci=>{ ci.classList.remove('selected'); ci.classList.remove('disabled'); });
-    try { if (customerListEl && el.parentNode === customerListEl) customerListEl.insertBefore(el, customerListEl.firstChild); } catch(e){}
-    el.classList.add('selected');
-    document.querySelectorAll('#customer_list .customer-item').forEach(ci=>{ if (ci !== el) ci.classList.add('disabled'); });
-    customerIdInput.value = customerObj.id; tempCustomerInput.value = '';
-    selectedCustomerBox.innerHTML =
-      `
-      <div class="customer-selected">
-  <div class="cust-line name">
-    <span class="label">👤 العميل:</span>
-    <strong>${escapeHtml(customerObj.name)}</strong>
-  </div>
-  <div class="cust-line phone">
-    <span class="label">📞 الموبايل:</span>
-    <span>${escapeHtml(customerObj.mobile)}</span>
-  </div>
-  <div class="cust-line small-muted city">
-    <span class="label ">🏙️ المدينة:</span>
-    <span>${escapeHtml(customerObj.city)}</span>
-  </div>
-  <div class="cust-line small-muted adress">
-    <span class="label">📍 العنوان:</span>
-    <span>${escapeHtml(customerObj.address || '')}</span>
-  </div>
-  <div class="cust-actions">
-    <button id="btnUnselectCustomer" type="button" class="btn ghost">✖ إلغاء اختيار العميل</button>
-  </div>
-</div>
-`;
-    document.getElementById('btnUnselectCustomer').addEventListener('click', function(){
-      document.querySelectorAll('#customer_list .customer-item').forEach(ci=>{ ci.classList.remove('selected'); ci.classList.remove('disabled'); });
-      customerIdInput.value = ''; tempCustomerInput.value = '';
-      selectedCustomerBox.innerHTML = '<div>لا يوجد عميل محدد.</div>';
-      if (cashBtn) cashBtn.classList.remove('selected');
-    });
-  }
-
-  customerSearch?.addEventListener('input', debounce(e=> loadCustomers(e.target.value.trim()),200));
-  loadCustomers('');
-
-  // Cash fixed button (no prompt)
-  if (cashBtn) {
-    cashBtn.addEventListener('click', function(){
-      if (!CASH_CUSTOMER_ID) { showTopMsg('error','معرّف العميل النقدي غير متوفر', 5000); return; }
-      customerIdInput.value = CASH_CUSTOMER_ID;
-      tempCustomerInput.value = '';
-      document.querySelectorAll('#customer_list .customer-item').forEach(ci=> ci.classList.add('disabled'));
-      selectedCustomerBox.innerHTML = `<div>العميل الحالي: <strong>${escapeHtml(CASH_CUSTOMER_NAME || 'عميل نقدي')}</strong></div>
-        <div style="margin-top:6px"><button id="btnUnselectCustomer" type="button" class="btn ghost">إلغاء اختيار العميل</button></div>`;
-      cashBtn.classList.add('selected');
-      document.getElementById('btnUnselectCustomer').addEventListener('click', function(){
-        document.querySelectorAll('#customer_list .customer-item').forEach(ci=> ci.classList.remove('disabled'));
-        customerIdInput.value = ''; tempCustomerInput.value = '';
-        selectedCustomerBox.innerHTML = '<div>لا يوجد عميل محدد.</div>';
-        cashBtn.classList.remove('selected');
-      });
-    });
-  }
-
-  // Add customer modal behavior (improved and clear inputs after success)
-  if (openAddBtn && modalAdd && closeAddBtn && submitAddBtn) {
-    openAddBtn.addEventListener('click', ()=> {
-      modalAdd.classList.add('open'); modalAdd.style.display='flex'; modalAdd.setAttribute('aria-hidden','false');
-      document.getElementById('addCustMsg').innerHTML = '';
-    });
-
-    closeAddBtn.addEventListener('click', ()=> {
-      modalAdd.classList.remove('open'); modalAdd.style.display='none'; modalAdd.setAttribute('aria-hidden','true');
-    });
-
-    submitAddBtn.addEventListener('click', async function(){
-
-      const name    = document.getElementById('new_name').value.trim();
-      const mobile  = document.getElementById('new_mobile').value.trim();
-      const city    = document.getElementById('new_city').value.trim();
-      const address = document.getElementById('new_address').value.trim();
-      const notes   = document.getElementById('new_notes') ? document.getElementById('new_notes').value.trim() : '';
-      const msg     = document.getElementById('addCustMsg');
-      msg.innerHTML = '';
-
-      if (!name || name.length < 3) { msg.innerHTML = '<div style="color:#a00">❌ الاسم مطلوب ويجب أن يكون 3 حروف على الأقل</div>'; return; }
-      if (!/^(01[0-9]{9})$/.test(mobile)) { msg.innerHTML = '<div style="color:#a00">❌ الموبايل يجب أن يبدأ بـ 01 ويتكون من 11 رقماً</div>'; return; }
-      if (!city) { msg.innerHTML = '<div style="color:#a00">❌ المدينة مطلوبة</div>'; return; }
-      if (!address || address.length < 5) { msg.innerHTML = '<div style="color:#a00">❌ العنوان يجب أن يكون أوضح (5 حروف على الأقل)</div>'; return; }
-
-  const form = new FormData();
-form.append('action','create_customer');
-form.append('csrf_token', csrf);
-form.append('name', name);
-form.append('mobile', mobile);
-form.append('city', city);
-form.append('address', address);
-form.append('notes', notes); // <-- جديد
-
-
-      try {
-        const res = await fetch(location.pathname, { method:'POST', body: form });
-        const data = await res.json();
-        if (!data.ok) { msg.innerHTML = '<div style="color:#a00">'+escapeHtml(data.msg || '⚠ حدث خطأ في الحفظ')+'</div>'; return; }
-
-        showTopMsg("success","تم اضافه عميل بنجاح");
-        // close modal
-        modalAdd.classList.remove('open'); modalAdd.style.display='none'; modalAdd.setAttribute('aria-hidden','true');
-
-        // clear inputs so next time modal is empty
-        document.getElementById('new_name').value = '';
-        document.getElementById('new_mobile').value = '';
-        document.getElementById('new_city').value = '';
-        document.getElementById('new_address').value = '';
-
-        await loadCustomers('');
-
-        // select the created customer
-        setTimeout(()=> {
-          const createdEl = Array.from(document.querySelectorAll('#customer_list .customer-item'))
-            .find(ci=> ci.dataset.cid == data.customer.id);
-          if (createdEl) createdEl.querySelector('.choose-cust').click();
-        }, 200);
-
-      } catch(err) {
-        msg.innerHTML = '<div style="color:#a00">🚫 خطأ في الاتصال بالخادم</div>';
-        console.error(err);
-      }
-    });
-  }
-
-  // close modals on backdrop click
-  document.querySelectorAll('.modal-backdrop').forEach(mb=> mb.addEventListener('click', function(ev){ if (ev.target === mb) { mb.classList.remove('open'); mb.style.display='none'; mb.setAttribute('aria-hidden','true'); } }));
-
-  // clear items
-  clearDraftBtn?.addEventListener('click', function(){
-    if (!confirm('هل تريد تفريغ كل البنود؟')) return;
-    document.querySelectorAll('#itemsTableBody tr').forEach(tr=>tr.remove());
-    const r = document.createElement('tr'); r.id='no-items-row'; r.innerHTML = '<td colspan="6" class="no-items">لا توجد بنود بعد — اختر منتجاً.</td>'; itemsBody.appendChild(r);
-    recalcTotals();
-  });
-
-  // Confirm modal open (existing)
-  openConfirmBtn?.addEventListener('click', function () {
-    const custId = parseInt(customerIdInput.value || 0, 10);
-    if (!custId) { showTopMsg('error', 'يجب اختيار عميل قبل الإتمام', 3500); return; }
-    const rows = Array.from(itemsBody.querySelectorAll('tr')).filter(r => r.id !== 'no-items-row');
-    if (rows.length === 0) { showTopMsg('error', 'لا توجد بنود لإتمام الفاتورة', 3500); return; }
-
-    // preview client
-    let clientHtml = `<div class="cust-preview">`;
-    if (custId === CASH_CUSTOMER_ID) {
-      clientHtml += `<p><strong>👤 العميل:</strong> ${escapeHtml(CASH_CUSTOMER_NAME || 'عميل نقدي')}</p>`;
-    } else {
-      const selected = Array.from(document.querySelectorAll('#customer_list .customer-item')).find(ci => parseInt(ci.dataset.cid || 0, 10) === custId);
-      if (selected) {
-        const name = selected.querySelector('div > div').innerText;
-        clientHtml += `<p><strong>👤 العميل:</strong> ${escapeHtml(name)}</p>`;
-      } else {
-        clientHtml += `<p><strong>👤 العميل:</strong> معرّف #${escapeHtml(String(custId))}</p>`;
-      }
-    }
-    clientHtml += `</div>`;
-    document.getElementById('confirmClientPreview').innerHTML = clientHtml;
-
-    // preview items
-    const preview = document.getElementById('confirmItemsPreview'); preview.innerHTML = '';
-    rows.forEach(r => {
-      const name = r.querySelector('td').innerText.trim();
-      const qty = r.querySelector('.qty').value;
-      const up = r.querySelector('.unit-price').value;
-      const line = parseFloat(qty) * parseFloat(up);
-
-      const div = document.createElement('div');
-      div.className = 'modal-item';
-      div.innerHTML = `
-        <div class="item-info">
-          <strong>${escapeHtml(name)}</strong>
-          <div class="small-muted">الكمية: ${qty} — سعر البيع: ${parseFloat(up).toFixed(2)}</div>
-        </div>
-        <div class="item-price">${line.toFixed(2)}</div>
-      `;
-      preview.appendChild(div);
-    });
-
-    document.getElementById('confirm_total_before').textContent = document.getElementById('total_before').textContent;
-
-    modalConfirm.classList.add('open'); modalConfirm.style.display='flex'; modalConfirm.setAttribute('aria-hidden','false');
-  });
-
-  confirmCancel?.addEventListener('click', function(){ modalConfirm.classList.remove('open'); modalConfirm.style.display='none'; modalConfirm.setAttribute('aria-hidden','true'); });
-
-  // Confirm send via AJAX
-  confirmSend?.addEventListener('click', async function(){
-    const formEl = document.getElementById('invoiceForm');
-    // build an array of used products so we can update local stock AFTER success
-    const usedProducts = [];
-    Array.from(itemsBody.querySelectorAll('tr')).forEach(r=>{
-      if (r.id==='no-items-row') return;
-      const pid = parseInt(r.dataset.productId||0,10);
-      const qty = parseFloat(r.querySelector('.qty')?.value||0);
-      if (pid && qty) usedProducts.push({product_id: pid, quantity: qty});
-    });
-
-    const fd = new FormData(formEl);
-    fd.set('confirm_complete','1');
+  // ---------- FIFO preview ----------
+  async function openFifoPreview(idx) {
+    const it = invoiceItems[idx];
+    if (!it) return;
     try {
-      const res = await fetch(location.pathname, {
-        method: 'POST',
-        headers: {'X-Requested-With':'XMLHttpRequest'},
-        body: fd
-      });
-      const text = await res.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch (err) {
-        const snippet = text.length > 800 ? text.substring(0,800) + '...' : text;
-        showTopMsg('error', 'استجابة غير متوقعة من الخادم — راجع سجلات PHP.', 8000);
-        console.error('Unexpected response (not JSON):', snippet);
-        return;
+      const json = await fetchJson(location.pathname + '?action=batches&product_id=' + encodeURIComponent(it.product_id));
+      if (!json.ok) return showToast(json.error || 'خطأ في جلب الدفعات','error');
+      const batches = (json.batches || []).slice().sort((a,b) => (a.received_at||a.created_at||'') > (b.received_at||b.created_at||'') ? 1 : -1);
+      let need = Number(it.qty || 0);
+      let html = `<h4>تفاصيل FIFO — ${esc(it.product_name)}</h4><table style="width:100%;border-collapse:collapse"><thead><tr><th>رقم الدفعة</th><th>التاريخ</th><th>المتبقي</th><th>سعر الشراء</th><th>مأخوذ</th><th>تكلفة</th></tr></thead><tbody>`;
+      let totalCost = 0;
+      for (const b of batches) {
+        if (need <= 0) break;
+        if (b.status !== 'active' || (parseFloat(b.remaining||0) <= 0)) continue;
+        const avail = parseFloat(b.remaining||0);
+        const take = Math.min(avail, need);
+        const cost = take * parseFloat(b.unit_cost||0);
+        totalCost += cost;
+        html += `<tr><td class="monos">${b.id}</td><td>${esc(b.received_at||b.created_at||'-')}</td><td>${fmt(b.remaining)}</td><td>${fmt(b.unit_cost)}</td><td>${fmt(take)}</td><td>${fmt(cost)}</td></tr>`;
+        need -= take;
       }
-      if (data && data.ok) {
-        modalConfirm.classList.remove('open'); modalConfirm.style.display='none'; modalConfirm.setAttribute('aria-hidden','true');
-        showTopMsg('success', data.message || 'تم إتمام الفاتورة', 4000);
-        // update local stocks (decrement)
-        try {
-          usedProducts.forEach(u=>{
-            const p = productList.find(x=> x.id === u.product_id);
-            if (p) {
-              p.stock = Math.max(0, (parseFloat(p.stock)||0) - parseFloat(u.quantity||0));
-              renderProductStock(p);
-            }
-          });
-        } catch(e){ console.error('update local stocks failed', e); }
-
-        // clear UI
-        document.querySelectorAll('#itemsTableBody tr').forEach(tr=>tr.remove());
-        const r = document.createElement('tr'); r.id='no-items-row'; r.innerHTML = '<td colspan="6" class="no-items">لا توجد بنود بعد — اختر منتجاً.</td>'; itemsBody.appendChild(r);
-        customerIdInput.value = '';
-        tempCustomerInput.value = '';
-        selectedCustomerBox.innerHTML = '<div>لا يوجد عميل محدد.</div>';
-        document.getElementById('total_before').textContent = '0.00';
-        document.getElementById('notes').value = '';
-        document.querySelectorAll('#customer_list .customer-item').forEach(ci=>ci.classList.remove('disabled','selected'));
-        document.getElementById('cashCustomerBtn')?.classList.remove('selected');
-
-        // update next invoice id shown
-        try {
-          const nextEl = document.getElementById('nextInvoiceId');
-          if (nextEl && data.invoice_id) {
-            const newNext = parseInt(data.invoice_id,10) + 1;
-            nextEl.textContent = '#' + newNext;
-          }
-        } catch(e){}
-      } else {
-        const errs = (data && data.errors) ? data.errors.join(' | ') : (data && data.msg ? data.msg : 'حصل خطأ');
-        showTopMsg('error', 'فشل إتمام الفاتورة: ' + errs, 6000);
-      }
-    } catch (err) {
-      showTopMsg('error', 'خطأ في الاتصال: ' + err.message, 5000);
-    }
-  });
-
-  // Print (kept same behavior)
-// طباعة — استبدل الـ handler القديم بهذا
-btnPrint?.addEventListener('click', function(){
-  const invoiceTitle = '<?php echo $invoice ? "فاتورة #".intval($invoice['id']) : "فاتورة "; ?>';
-  const custBox = document.getElementById('selectedCustomerBox');
-  let custHtml = '<div>عميل نقدي</div>'; // default fallback
-
-  // 1) إذا كان العميل هو العميل النقدي الثابت (زر "نقدي (ثابت)" وضع customer_id)
-  const custIdVal = parseInt(customerIdInput.value || 0, 10);
-  if (custIdVal === CASH_CUSTOMER_ID) {
-    custHtml = `<div><div><strong>${escapeHtml(CASH_CUSTOMER_NAME || 'عميل نقدي')}</strong></div></div>`;
-  } else if (custBox) {
-    // 2) حاول استخراج الاسم/الهاتف/العنوان بأكثر من طريقة (مرونة مع تغيّر HTML)
-    let name = (custBox.querySelector('.name')?.innerText || '').trim();
-    let phone = (custBox.querySelector('.phone')?.innerText || '').trim();
-    let address = (custBox.querySelector('.adress')?.innerText || '').trim(); // لاحظ: 'adress' مستخدمة في كودك
-
-    // fallback: إذا لم نجد name باستخدام الكلاسات، جرب أول <strong> داخل الصندوق
-    if (!name) name = (custBox.querySelector('strong')?.innerText || '').trim();
-
-    // fallback: حاول إيجاد رقم هاتف داخل نص الـ box (regex بسيط)
-    if (!phone) {
-      const txt = custBox.innerText || '';
-      const m = txt.match(/(01[0-9]{9}|\+?\d{7,15})/);
-      if (m) phone = m[0];
-    }
-
-    // fallback: إذا لم نوجد أي من الحقول، تحقق من نص "العميل الحالي: ... " (مثلاً عند cashBtn)
-    if (!name && /العميل الحالي[:\s]/.test(custBox.innerText)) {
-      // خذ النص بعد "العميل الحالي:"
-      const after = custBox.innerText.split('العميل الحالي:')[1] || '';
-      const parts = after.split('—').map(s=>s.trim()).filter(Boolean);
-      if (parts.length) name = parts[0];
-      if (!phone && parts.length > 1) phone = parts[1];
-    }
-
-    // بناء HTML للعميل إذا وجدنا بيانات فعلية
-    if (name || phone || address) {
-      custHtml = `<div>
-                    <div><strong>${escapeHtml(name)}</strong> ${phone ? `<br/>${escapeHtml(phone)}` : ''}</div>
-                    ${address ? `<div>${escapeHtml(address)}</div>` : ''}
-                  </div>`;
-    } else {
-      // لا بيانات => نستخدم العميل النقدي كـ fallback
-      custHtml = '<div>عميل نقدي</div>';
+      if (need > 0) html += `<tr><td colspan="6" style="color:#b91c1c">تحذير: الرصيد غير كافٍ.</td></tr>`;
+      html += `</tbody></table><div style="margin-top:8px"><strong>إجمالي تكلفة البند:</strong> ${fmt(totalCost)} ج</div>`;
+      onId('batchDetailBody', el => el.innerHTML = html);
+      onId('batchTitle', el => el.textContent = 'تفاصيل FIFO');
+      onId('batchDetailModal_backdrop', el => el.style.display = 'flex');
+    } catch (e) {
+      console.error(e);
+      showToast('تعذر جلب الدفعات','error');
     }
   }
 
-  // بناء جدول البنود كما كان
-  let itemsHtml = '<table><thead><tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead><tbody>';
-  document.querySelectorAll('#itemsTableBody tr').forEach(tr=>{
-    if (tr.id==='no-items-row') return;
-    const name = tr.querySelector('td')?.innerText.trim() || '';
-    const qty = tr.querySelector('.qty') ? tr.querySelector('.qty').value : '';
-    const up = tr.querySelector('.unit-price') ? tr.querySelector('.unit-price').value : '';
-    const line = tr.querySelector('.line-total') ? tr.querySelector('.line-total').innerText : '';
-    itemsHtml += `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(qty)}</td><td>${escapeHtml(parseFloat(up||0).toFixed(2))}</td><td>${escapeHtml(line)}</td></tr>`;
-  });
-  itemsHtml += '</tbody></table>';
+  // batches modal (full)
+  async function openBatchesModal(productId) {
+    try {
+      await fetchJson(location.pathname + '?action=sync_consumed').catch(()=>{}); // sync best-effort
+      const json = await fetchJson(location.pathname + '?action=batches&product_id=' + productId);
+      if (!json.ok) return showToast(json.error || 'خطأ في جلب الدفعات','error');
+      const p = json.product || {};
+      onId('batchesTitle', el => el.textContent = `دفعات — ${p.name || ''}`);
+      onId('batchesInfo', el => el.textContent = `${p.product_code || ''}`);
+      const rows = json.batches || [];
+      if (!rows.length) { onId('batchesTable', el => el.innerHTML = '<div class="small-muted">لا توجد دفعات.</div>'); onId('batchesModal_backdrop', m => m.style.display='flex'); return; }
+      let html = `<table style="width:100%;border-collapse:collapse"><thead><tr><th>رقم الدفعة</th><th>التاريخ</th><th>كمية</th><th>المتبقي</th><th>سعر الشراء</th><th>سعر البيع</th><th>رقم الفاتورة</th><th>ملاحظات</th><th>الحالة</th><th>عرض</th></tr></thead><tbody>`;
+      rows.forEach(b=>{
+        const st = b.status === 'active' ? '<span class="badge green">فعال</span>' : (b.status==='consumed'?'<span class="badge warn">مستهلك</span>':(b.status==='reverted'?'<span class="badge purple">مرجع</span>':'<span class="badge red">ملغى</span>'));
+        html += `<tr><td class="monos">${b.id}</td><td class="small monos">${b.received_at||b.created_at||'-'}</td><td>${fmt(b.qty)}</td><td>${fmt(b.remaining)}</td><td>${fmt(b.unit_cost)}</td><td>${fmt(b.sale_price)}</td><td class="monos">${b.source_invoice_id||'-'}</td><td class="small">${esc(b.notes||'-')}</td><td>${st}</td><td><button class="btn ghost view-batch" data-id="${b.id}">عرض</button></td></tr>`;
+      });
+      html += `</tbody></table>`;
+      onId('batchesTable', el => el.innerHTML = html);
+      // attach view handlers
+      document.querySelectorAll('.view-batch').forEach(btn => btn.addEventListener('click', ()=> {
+        const id = btn.dataset.id;
+        const row = rows.find(r=> r.id == id);
+        if (!row) return;
+        const st = row.status === 'active' ? 'فعال' : (row.status==='consumed'?'مستهلك':(row.status==='reverted'?'مرجع':'ملغى'));
+        let html = `<table style="width:100%"><tbody>
+          <tr><td>رقم الدفعة</td><td class="monos">${row.id}</td></tr>
+          <tr><td>الكمية الأصلية</td><td>${fmt(row.qty)}</td></tr>
+          <tr><td>المتبقي</td><td>${fmt(row.remaining)}</td></tr>
+          <tr><td>سعر الشراء</td><td>${fmt(row.unit_cost)}</td></tr>
+          <tr><td>سعر البيع</td><td>${fmt(row.sale_price)}</td></tr>
+          <tr><td>تاريخ الاستلام</td><td>${esc(row.received_at||row.created_at||'-')}</td></tr>
+          <tr><td>رقم الفاتورة المرتبطة</td><td>${row.source_invoice_id||'-'}</td></tr>
+          <tr><td>ملاحظات</td><td>${esc(row.notes||'-')}</td></tr>
+          <tr><td>حالة</td><td>${esc(st)}</td></tr>
+          <tr><td>سبب الإلغاء</td><td>${row.status==='cancelled'?esc(row.cancel_reason||'-'):'-'}</td></tr>
+          <tr><td>سبب الإرجاع</td><td>${row.status==='reverted'?esc(row.revert_reason||'-'):'-'}</td></tr>
+        </tbody></table>`;
+        onId('batchDetailBody', el => el.innerHTML = html);
+        onId('batchTitle', el => el.textContent = 'تفاصيل الدفعة');
+        onId('batchDetailModal_backdrop', m => m.style.display = 'flex');
+      }));
+      onId('batchesModal_backdrop', m => m.style.display = 'flex');
+    } catch (e) {
+      console.error(e); showToast('خطأ في فتح الدفعات','error');
+    }
+  }
 
-  const totBefore = document.getElementById('total_before')?.textContent || '0.00';
-  const notes = document.getElementById('notes') ? escapeHtml(document.getElementById('notes').value) : '';
+  // close modal handlers
+  onId('closeBatchesBtn', btn => btn.addEventListener('click', ()=> onId('batchesModal_backdrop', m => m.style.display = 'none')));
+  onId('closeBatchDetailBtn', btn => btn.addEventListener('click', ()=> onId('batchDetailModal_backdrop', m => m.style.display = 'none')));
+  onId('batchDetailModal_backdrop', el => el.addEventListener('click', e=> { if (e.target === el) el.style.display='none'; }));
+  onId('batchesModal_backdrop', el => el.addEventListener('click', e=> { if (e.target === el) el.style.display='none'; }));
 
-  const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>طباعة الفاتورة</title>
-    <style>body{font-family:Arial;padding:12px} table{width:100%;border-collapse:collapse} th,td{padding:6px;border:1px solid #ccc;text-align:right} h2{margin-top:0}</style></head><body>
-    <h2>${invoiceTitle}</h2><div>${custHtml}</div><hr>${itemsHtml}<hr>
-    <div><strong>الإجمالي:</strong> ${totBefore} ج.م</div>
-    </body></html>`;
+  // sync button
+  onId('syncBtn', btn => btn.addEventListener('click', async ()=> {
+    try { const json = await fetchJson(location.pathname + '?action=sync_consumed'); if (json.ok) showToast('تم مزامنة الدفعات','success'); loadProducts(); } catch(e){ showToast('خطأ في المزامنة','error'); }
+  }));
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow.document;
-  doc.open(); doc.write(html); doc.close();
-  iframe.onload = () => { try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(e){ console.error(e); } setTimeout(()=> document.body.removeChild(iframe), 1000); };
-});
+  // ---------- customers ----------
+  async function loadCustomers(q='') {
+    try {
+      const json = await fetchJson(location.pathname + '?action=customers' + (q?('&q='+encodeURIComponent(q)):''), { credentials: 'same-origin' });
+      if (!json.ok) { console.warn(json.error); return; }
+      customers = json.customers || [];
+      const wrap = $('customersList'); if (!wrap) return; wrap.innerHTML = '';
+      customers.forEach(c => {
+        const d = document.createElement('div');
+        d.className = 'cust-card';
+        d.innerHTML = `<div><strong>${esc(c.name)}</strong><div class="small-muted">${esc(c.mobile)} — ${esc(c.city||'')}</div></div><div><button class="btn ghost choose-cust" data-id="${c.id}">اختر</button></div>`;
+        wrap.appendChild(d);
+      });
+      // attach choose
+      document.querySelectorAll('.choose-cust').forEach(btn => btn.addEventListener('click', async ()=> {
+        const cid = btn.dataset.id;
+        try {
+          const fd = new FormData(); fd.append('action','select_customer'); fd.append('csrf_token', getCsrfToken()); fd.append('customer_id', cid);
+          const res = await fetch(location.pathname + '?action=select_customer', { method: 'POST', body: fd, credentials: 'same-origin' });
+          const txt = await res.text();
+          let json; try { json = JSON.parse(txt); } catch(e){ showToast('استجابة غير متوقعة','error'); return; }
+          if (!json.ok) { showToast(json.error || 'فشل اختيار العميل','error'); return; }
+          selectedCustomer = json.customer; renderSelectedCustomer(); showToast('تم اختيار العميل','success');
+        } catch (e) { console.error(e); showToast('خطأ في الاتصال','error'); }
+      }));
+    } catch (e) { console.error(e); }
+  }
 
-  // initial stock check for rows loaded from server
-  document.querySelectorAll('#itemsTableBody tr').forEach(tr=>{
-    if (tr.id === 'no-items-row') return;
-    const pid = parseInt(tr.dataset.productId||0,10);
-    const p = productList.find(x=>x.id===pid);
-    if (p) checkRowStock(tr, p.stock);
-  });
+  onId('customerSearchInput', el => el.addEventListener('input', debounce(()=> loadCustomers(el.value.trim()), 250)));
+
+  function renderSelectedCustomer() {
+    if (!selectedCustomer) {
+      onId('selectedCustomerName', el => el.textContent = 'لم يتم الاختيار');
+      onId('selectedCustomerDetails', el => el.innerHTML = '');
+      return;
+    }
+    onId('selectedCustomerName', el => el.textContent = selectedCustomer.name || '—');
+    onId('selectedCustomerDetails', el => elinner = el.innerHTML = `📞 ${esc(selectedCustomer.mobile||'-')} <br> 🏙️ ${esc(selectedCustomer.city||'-')} <div class="small-muted">📍 ${esc(selectedCustomer.address||'-')}</div>`);
+  }
+
+  // cash customer button (fixed)
+  onId('cashCustomerBtn', btn => btn.addEventListener('click', async ()=>{
+    // try to find a customer named "عميل نقدي" or id 8 in your DB; we'll set selectedCustomer to the matching one if exists
+    try {
+      const json = await fetchJson(location.pathname + '?action=customers&q=عميل نقدي');
+      if (!json.ok) { showToast('خطأ في جلب العملاء','error'); return; }
+      const found = (json.customers || []).find(c => c.name && c.name.includes('نقد') || c.name === 'عميل نقدي') || (json.customers || [])[0] || null;
+      if (found) {
+        // select via session endpoint
+        const fd = new FormData(); fd.append('action','select_customer'); fd.append('csrf_token', getCsrfToken()); fd.append('customer_id', found.id);
+        const res = await fetch(location.pathname + '?action=select_customer', { method: 'POST', body: fd, credentials: 'same-origin' });
+        const txt = await res.text(); let sel; try { sel = JSON.parse(txt); } catch(e){ showToast('استجابة غير متوقعة','error'); return; }
+        if (!sel.ok) { showToast(sel.error || 'تعذر اختيار العميل','error'); return; }
+        selectedCustomer = sel.customer; renderSelectedCustomer(); showToast('تم اختيار العميل النقدي','success');
+      } else showToast('لم يتم العثور على حساب نقدي','error');
+    } catch (e) { console.error(e); showToast('خطأ في الاتصال','error'); }
+  }));
+
+  onId('btnUnselectCustomer', btn => btn.addEventListener('click', async ()=> {
+    try {
+      const fd = new FormData(); fd.append('action','select_customer'); fd.append('csrf_token', getCsrfToken()); fd.append('customer_id', 0);
+      const res = await fetch(location.pathname + '?action=select_customer', { method:'POST', body: fd, credentials: 'same-origin' });
+      const txt = await res.text(); let json; try{ json = JSON.parse(txt); }catch(e){ showToast('استجابة غير متوقعة','error'); return; }
+      selectedCustomer = null; renderSelectedCustomer(); showToast('تم إلغاء اختيار العميل','success');
+    } catch (e) { console.error(e); showToast('خطأ في الاتصال','error'); }
+  }));
+
+  // add customer modal handlers
+  onId('openAddCustomerBtn', btn => btn.addEventListener('click', ()=> onId('addCustomer_backdrop', m => m.style.display = 'flex')));
+  onId('closeAddCust', btn => btn.addEventListener('click', ()=> onId('addCustomer_backdrop', m => m.style.display = 'none')));
+  onId('submitAddCust', btn => btn.addEventListener('click', async ()=> {
+    const name = $('new_name') ? $('new_name').value.trim() : '';
+    const mobile = $('new_mobile') ? $('new_mobile').value.trim() : '';
+    const city = $('new_city') ? $('new_city').value.trim() : '';
+    const addr = $('new_address') ? $('new_address').value.trim() : '';
+    const notes = $('new_notes') ? $('new_notes').value.trim() : '';
+    if (!name) return showToast('الرجاء إدخال اسم العميل','error');
+    const fd = new FormData(); fd.append('action','add_customer'); fd.append('csrf_token', getCsrfToken());
+    fd.append('name', name); fd.append('mobile', mobile); fd.append('city', city); fd.append('address', addr); fd.append('notes', notes);
+    try {
+      const res = await fetch(location.pathname + '?action=add_customer', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const txt = await res.text(); let json; try { json = JSON.parse(txt); } catch(e){ showToast('استجابة غير متوقعة','error'); return; }
+      if (!json.ok) return showToast(json.error || 'فشل إضافة العميل','error');
+      // auto-select newly created
+      selectedCustomer = json.customer; renderSelectedCustomer();
+      onId('addCustomer_backdrop', m => m.style.display = 'none');
+      showToast('تم إضافة العميل واختياره','success');
+      loadCustomers(); // refresh list
+    } catch (e) { console.error(e); showToast('خطأ في الاتصال','error'); }
+  }));
+
+  // theme toggle
+  onId('toggleThemeBtn', btn => btn.addEventListener('click', ()=> {
+    const el = document.documentElement;
+    const cur = el.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    el.setAttribute('data-theme', cur === 'dark' ? 'dark' : 'light');
+  }));
+
+  // initial load
+  (async function init(){
+    try { await fetchJson(location.pathname + '?action=sync_consumed').catch(()=>{}); } catch(e){}
+    loadProducts(); loadCustomers(); renderSelectedCustomer();
+  })();
 
 }); // DOMContentLoaded
 </script>
 
 <?php
 require_once BASE_DIR . 'partials/footer.php';
-ob_end_flush();
 ?>

@@ -221,8 +221,8 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
   <!-- TABLE -->
   <div class="table-card">
-    <div class="table-responsive">
-      <table id="reportTable" class="table table-hover table-striped mb-0 align-middle">
+    <div class="table-responsive custom-table-wrapper">
+      <table id="reportTable" class="custom-table">
         <thead>
           <tr>
             <th>#</th>

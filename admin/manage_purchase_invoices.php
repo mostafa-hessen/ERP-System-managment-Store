@@ -1224,10 +1224,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
     text-align: center;
   }
 
-  .table-dark th {
-    background: #111827;
-    color: #fff;
-  }
 
   .form-control {
     padding: 6px;
@@ -1285,9 +1281,9 @@ require_once BASE_DIR . 'partials/sidebar.php';
   <!-- Invoices table -->
   <div class="card">
     <div style="padding:8px;">
-      <div style="overflow:auto;">
-        <table class="table">
-          <thead class="table-dark">
+      <div style="overflow:auto; " class="custom-table-wrapper">
+        <table class=" tabel custom-table customized">
+          <thead class="table-dark center">
             <tr>
               <th>#</th>
               <th>المورد</th>
@@ -1340,11 +1336,11 @@ require_once BASE_DIR . 'partials/sidebar.php';
   </div>
 
   <!-- summary -->
-  <div style="display:flex;justify-content:flex-end;">
+  <div style="display:flex;justify-content:flex-end;"class=" custom-text">
     <div class="card" style="width:360px;">
       <div style="padding:12px;">
-        <div><strong>إجمالي الفواتير المعروضة:</strong> <span><?php echo number_format($displayed_invoices_sum, 2); ?> ج.م</span></div>
-        <div style="margin-top:8px"><strong>الإجمالي الكلي (غير الملغاة):</strong> <span><?php echo number_format($grand_total_all_purchases, 2); ?> ج.م</span></div>
+        <div class=" custom-text"><strong>إجمالي الفواتير المعروضة:</strong> <span class="badge bg-primary"><?php echo number_format($displayed_invoices_sum, 2); ?> ج.م</span></div>
+        <div class=" custom-text" style="margin-top:8px"><strong>الإجمالي الكلي (غير الملغاة):</strong> <span class="badge bg-success"><?php echo number_format($grand_total_all_purchases, 2); ?> ج.م</span></div>
       </div>
     </div>
   </div>

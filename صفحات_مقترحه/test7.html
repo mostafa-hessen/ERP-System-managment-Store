@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>إنشاء فاتورة — عرض فكرة دفعات FIFO</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+  /* ====== Scoped "mp" styles to avoid conflicts ====== */
+  :root{
+    --primary:#0b84ff; --accent:#7c3aed; --teal:#10b981; --amber:#f59e0b; --rose:#ef4444;
+    --bg:#f6f8fc; --surface:#fff; --surface-2:#f9fbff; --text:#0b1220; --muted:#64748b; --border:rgba(2,6,23,0.06);
+    --radius:12px; --shadow:0 12px 28px rgba(2,6,23,0.06);
+    --gap:14px;
+    font-family: Inter, "Noto Naskh Arabic", Tahoma, Arial, sans-serif;
+  }
+  body{margin:0;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
+  .mp-app{display:grid;grid-template-rows:64px 1fr;height:100vh}
+  .mp-header{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--border);background:linear-gradient(90deg, rgba(255,255,255,0.6), rgba(255,255,255,0.3));box-shadow:var(--shadow)}
+  .mp-brand{display:flex;gap:12px;align-items:center}
+  .mp-logo{width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--accent));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900}
+  .mp-title{font-weight:900;font-size:18px}
+  /* layout: 3 columns RTL: right=products, center=invoice, left=clients */
+  .mp-body{display:grid;grid-template-columns:360px 1fr 300px;gap:var(--gap);padding:18px;overflow:hidden}
+  /* ensure the content fits 100vh minus header */
+  .mp-col{background:var(--surface);border-radius:12px;padding:12px;box-shadow:var(--shadow);overflow:auto;max-height:calc(100vh - 120px)}
+  /* Product cards (right column) */
+  .mp-products .mp-product-card{display:flex;flex-direction:column;border-radius:10px;padding:12px;border:1px solid var(--border);margin-bottom:10px;background:linear-gradient(180deg,#fff,#f9fbff)}
+  .mp-product-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .mp-product-name{font-weight:800}
+  .mp-p-meta{font-size:13px;color:var(--muted);margin-top:8px}
+  .mp-product-grid{display:grid;grid-template-columns:1fr;gap:8px}
+  .mp-add-btn{margin-top:8px;padding:8px;border-radius:8px;border:none;background:linear-gradient(90deg,var(--primary),var(--accent));color:#fff;cursor:pointer}
+  .mp-disabled{opacity:0.5;cursor:not-allowed}
+  .mp-badge{display:inline-block;padding:6px 10px;border-radius:999px;font-weight:700}
+  .mp-badge.green{background:rgba(16,185,129,0.08);color:var(--teal)}
+  .mp-badge.gray{background:rgba(148,163,184,0.06);color:var(--muted)}
+  .mp-card-actions{display:flex;gap:8px;margin-top:8px}
+  .mp-btn-ghost{padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:transparent;cursor:pointer}
+
+  /* invoice middle column */
+  .mp-invoice .mp-inv-header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+  .mp-inv-title{font-weight:900}
+  .mp-inv-controls{display:flex;gap:8px;align-items:center}
+  .mp-inv-table{width:100%;border-collapse:collapse}
+  .mp-inv-table th, .mp-inv-table td{padding:8px;border-bottom:1px solid var(--border);text-align:center}
+  .mp-inv-table th{background:var(--surface-2);font-weight:800;color:var(--muted)}
+  .mp-inv-table .name-col{text-align:right;font-weight:800}
+  .mp-input{padding:6px;border-radius:8px;border:1px solid var(--border);min-width:80px}
+  .mp-select{padding:6px;border-radius:8px;border:1px solid var(--border)}
+  .mp-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+  .mp-primary{padding:8px 12px;border-radius:10px;border:none;background:linear-gradient(90deg,var(--primary),var(--accent));color:#fff;cursor:pointer}
+  .mp-ghost{padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:transparent;cursor:pointer}
+  .mp-note{font-size:13px;color:var(--muted);margin-top:8px}
+  .mp-summary{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding-top:8px;border-top:1px dashed var(--border)}
+  .mp-summary .row{display:flex;justify-content:space-between;align-items:center}
+
+  /* client column */
+  .mp-client-list .mp-client{padding:10px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .mp-client .mp-client-meta{font-size:13px;color:var(--muted)}
+  .mp-client .mp-select-btn{padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:transparent;cursor:pointer}
+
+  /* modals */
+  .mp-modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);display:none;align-items:center;justify-content:center;z-index:1200;padding:20px}
+  .mp-modal{width:100%;max-width:960px;background:var(--surface);border-radius:10px;padding:16px;max-height:88vh;overflow:auto}
+  .mp-table-small{width:100%;border-collapse:collapse}
+  .mp-table-small th, .mp-table-small td{padding:6px;border:1px solid #eee;text-align:center}
+
+  /* toasts top */
+  .mp-toast-wrap{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:2000;display:flex;flex-direction:column;gap:8px}
+  .mp-toast{padding:10px 14px;border-radius:8px;color:#fff;box-shadow:0 8px 20px rgba(2,6,23,0.2)}
+  .mp-toast.success{background:linear-gradient(90deg,#10b981,#06b6d4)}
+  .mp-toast.error{background:linear-gradient(90deg,#ef4444,#f97316)}
+  .mp-small{font-size:13px;color:var(--muted)}
+
+  /* responsive */
+  @media (max-width:1100px){ .mp-body{grid-template-columns:1fr;grid-auto-rows:auto} .mp-products{order:2} .mp-invoice{order:1} .mp-clients{order:3} }
+</style>
+</head>
+<body>
+<div class="mp-app">
+  <div class="mp-header">
+    <div class="mp-brand">
+      <div class="mp-logo">INV</div>
+      <div>
+        <div class="mp-title">إنشاء فاتورة بيع — نمط FIFO</div>
+        <div class="mp-small">اقتِراحت آخر دفعة فعّالة كسعر بيع — يمكنك تغييره</div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="mp-small">المستخدم: <strong>Admin</strong></div>
+      <button id="mp-theme" class="mp-btn-ghost" title="تبديل السمة"><i class="fa fa-moon"></i></button>
+    </div>
+  </div>
+
+  <div class="mp-body">
+    <!-- RIGHT: Products column -->
+    <aside class="mp-col mp-products" id="mpProductsCol" aria-label="المنتجات">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:900">المنتجات</div>
+        <div class="mp-small">اضغط على المنتج أو زر "إضافة" لإدخاله في الفاتورة</div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <input id="mpProdSearch" class="mp-input" placeholder="ابحث باسم أو كود..." style="width:100%">
+      </div>
+
+      <div id="mpProductsList" aria-live="polite">
+        <!-- Product cards injected here -->
+      </div>
+    </aside>
+
+    <!-- CENTER: Invoice column -->
+    <main class="mp-col mp-invoice" id="mpInvoiceCol" aria-label="الفاتورة">
+      <div class="mp-inv-header">
+        <div>
+          <div class="mp-inv-title">فاتورة جديدة</div>
+          <div class="mp-small">حالة الفاتورة:
+            <select id="invState" class="mp-select">
+              <option value="pending" selected>مؤجل</option>
+              <option value="paid">تم الدفع</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="mp-inv-controls">
+          <button id="mpPreviewAll" class="mp-ghost">معاينة FIFO لكل البنود</button>
+          <button id="mpClearItems" class="mp-ghost">تفريغ البنود</button>
+          <button id="mpConfirm" class="mp-primary">تأكيد وإنشاء الفاتورة</button>
+        </div>
+      </div>
+
+      <div style="overflow:auto">
+        <table class="mp-inv-table" id="mpInvTable" aria-label="بنود الفاتورة">
+          <thead>
+            <tr>
+              <th>المنتج</th>
+              <th>الكمية</th>
+              <th>سعر البيع</th>
+              <th>تفاصيل FIFO</th>
+              <th>إجمالي</th>
+              <th>حذف</th>
+            </tr>
+          </thead>
+          <tbody id="mpInvTbody">
+            <!-- rows -->
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:flex-start;margin-top:8px">
+        <div style="flex:1">
+          <label class="mp-small">ملاحظات الفاتورة</label>
+          <textarea id="invNotes" style="width:100%;min-height:70px;padding:8px;border-radius:8px;border:1px solid var(--border)"></textarea>
+        </div>
+        <div style="width:240px">
+          <div class="mp-summary">
+            <div class="row"><div class="mp-small">إجمالي المبيعات</div><div id="sumRevenue">0.00 ج</div></div>
+            <div class="row"><div class="mp-small">إجمالي COGS</div><div id="sumCOGS">0.00 ج</div></div>
+            <div class="row"><div class="mp-small">الربح</div><div id="sumProfit">0.00 ج</div></div>
+            <div class="row"><div class="mp-small">إجمالي الوحدات</div><div id="sumUnits">0.00</div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- LEFT: Clients -->
+    <aside class="mp-col mp-clients" id="mpClientsCol" aria-label="العملاء">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:900">العملاء</div>
+        <div class="mp-small">اختر عميلاً للفاتورة</div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <input id="mpClientSearch" class="mp-input" placeholder="ابحث عن عميل...">
+      </div>
+
+      <div id="mpClientsList">
+        <!-- clients -->
+      </div>
+
+    </aside>
+  </div>
+</div>
+
+<!-- Batches modal -->
+<div id="mpBatchesModal" class="mp-modal-backdrop" role="dialog" aria-modal="true">
+  <div class="mp-modal" role="document">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h3 id="batchesModalTitle">دفعات المنتج</h3>
+        <div id="batchesModalProduct" class="mp-small"></div>
+      </div>
+      <div>
+        <button id="mpCloseBatches" class="mp-ghost">إغلاق</button>
+      </div>
+    </div>
+    <div style="margin-top:10px" id="batchesModalContent"></div>
+  </div>
+</div>
+
+<!-- FIFO preview modal -->
+<div id="mpPreviewModal" class="mp-modal-backdrop" role="dialog" aria-modal="true">
+  <div class="mp-modal" role="document">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><h3>معاينة تخصيصات FIFO</h3><div id="previewModalSub" class="mp-small"></div></div>
+      <div><button id="mpClosePreview" class="mp-ghost">إغلاق</button></div>
+    </div>
+    <div style="margin-top:10px" id="mpPreviewContent"></div>
+  </div>
+</div>
+
+<!-- toasts -->
+<div class="mp-toast-wrap" id="mpToasts" aria-live="polite"></div>
+
+<script>
+/* ============================
+   Mock data (simulate DB)
+   batches: status: 'active','consumed','reverted','cancelled'
+   ============================ */
+const PRODUCTS = [
+  {id:4, product_code:'212', name:'لبس', unit:'قطعة', current_stock:400, reorder_level:50, base_cost:200.00, base_sell:999.99},
+  {id:5, product_code:'11', name:'mm', unit:'كجم', current_stock:207, reorder_level:0, base_cost:20.00, base_sell:30.00},
+  {id:780, product_code:'2122', name:'سكينه', unit:'قطعة', current_stock:29, reorder_level:0, base_cost:200.00, base_sell:400.00},
+  {id:785, product_code:'d50', name:'خمسه ام', unit:'قطعة', current_stock:3, reorder_level:5, base_cost:15.00, base_sell:15.00}
+];
+
+const BATCHES = {
+  // productId: [batches sorted by received_at asc]
+  4: [
+    {id:1001, qty:200, remaining:0, unit_cost:180, sale_price:230, received_at:'2025-06-01', notes:'دفعة قديمة', status:'consumed'},
+    {id:1002, qty:200, remaining:200, unit_cost:200, sale_price:250, received_at:'2025-09-01', notes:'توريد سبتمبر', status:'active'}
+  ],
+  5: [
+    {id:2001, qty:10, remaining:7, unit_cost:85, sale_price:120, received_at:'2025-07-01', notes:'', status:'active'}
+  ],
+  780: [
+    {id:3001, qty:15, remaining:3, unit_cost:200, sale_price:400, received_at:'2025-09-02', notes:'دفعة صغيرة', status:'active'}
+  ],
+  785: [
+    {id:4001, qty:5, remaining:0, unit_cost:15, sale_price:20, received_at:'2025-09-03', notes:'تم الاستهلاك', status:'consumed'}
+  ]
+};
+
+/* State */
+let products = JSON.parse(JSON.stringify(PRODUCTS));
+let batches = JSON.parse(JSON.stringify(BATCHES));
+let invoiceItems = []; // {productId, qty, selling_price, allocations (computed preview)}
+let clients = [
+  {id:1, name:'عميل A', mobile:'0111'},
+  {id:2, name:'عميل B', mobile:'0112'},
+  {id:3, name:'نقدي', mobile:''}
+];
+let selectedClient = null;
+
+/* Helpers */
+const $ = id => document.getElementById(id);
+function formatNum(n){ return Number(n||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function showToast(text, type='success', t=3000){
+  const wrap = $('mpToasts');
+  const d = document.createElement('div'); d.className = 'mp-toast ' + (type==='error'?'error':'success'); d.textContent = text;
+  wrap.appendChild(d); setTimeout(()=> { d.style.opacity='0'; setTimeout(()=> wrap.removeChild(d),300); }, t);
+}
+
+/* Compute aggregates for products from batches */
+function computeProductAggregates(pid){
+  const b = batches[pid] || [];
+  const active = b.filter(x=> x.status==='active' && (Number(x.remaining)||0) > 0);
+  const rem = active.reduce((s,x)=> s + Number(x.remaining||0), 0);
+  const val = active.reduce((s,x)=> s + Number(x.remaining||0) * Number(x.unit_cost||0), 0);
+  // last active or consumed
+  const last = (b.filter(x=> ['active','consumed'].includes(x.status)).sort((a,b)=> (b.received_at || b.created_at || '') > (a.received_at || a.created_at || '') ? 1:-1)[0]) || null;
+  return {remaining_active:rem, stock_value_active:val, last_batch: last};
+}
+
+/* Render products as cards (right column) */
+function renderProducts(list=products){
+  const container = $('mpProductsList'); container.innerHTML='';
+  const q = $('mpProdSearch').value.trim().toLowerCase();
+  list.forEach(p=>{
+    if (q && !(p.name+' '+p.product_code).toLowerCase().includes(q)) return;
+    const agg = computeProductAggregates(p.id);
+    const card = document.createElement('div'); card.className='mp-product-card';
+    const head = document.createElement('div'); head.className='mp-product-head';
+    head.innerHTML = `<div>
+                        <div class="mp-product-name">${p.name}</div>
+                        <div class="mp-small">كود • #${p.product_code}</div>
+                      </div>
+                      <div><div class="mp-badge ${agg.remaining_active>0?'green':'gray'}">${agg.remaining_active>0? formatNum(agg.remaining_active): 'مستهلك'}</div></div>`;
+    card.appendChild(head);
+    const meta = document.createElement('div'); meta.className='mp-p-meta';
+    meta.innerHTML = `رصيد دخل: ${formatNum(p.current_stock)} • متبقي (Active): ${formatNum(agg.remaining_active)}<br>آخر شراء: ${agg.last_batch? (agg.last_batch.received_at + ' • ' + formatNum(agg.last_batch.unit_cost)) : '-'}`;
+    card.appendChild(meta);
+    const actions = document.createElement('div'); actions.className='mp-card-actions';
+    const addBtn = document.createElement('button'); addBtn.className='mp-add-btn'; addBtn.innerHTML = '<i class="fa fa-plus"></i> إضافة';
+    const viewBtn = document.createElement('button'); viewBtn.className='mp-btn-ghost'; viewBtn.textContent='دفعات';
+    // disable add if no active remaining
+    if (agg.remaining_active <= 0){
+      addBtn.disabled = true; addBtn.classList.add('mp-disabled');
+      addBtn.title = 'المنتج مستهلك لا يمكن إضافته';
+    } else {
+      addBtn.addEventListener('click', ()=> addProductToInvoice(p.id));
+    }
+    viewBtn.addEventListener('click', ()=> openBatchesModal(p.id));
+    // clicking card body also adds (but only if available)
+    card.addEventListener('click', (ev)=> {
+      if (ev.target.closest('button')) return; // avoid double
+      if (agg.remaining_active <= 0) { openBatchesModal(p.id); return; }
+      addProductToInvoice(p.id);
+    });
+    actions.appendChild(addBtn); actions.appendChild(viewBtn);
+    card.appendChild(actions);
+    container.appendChild(card);
+  });
+}
+
+/* Render clients */
+function renderClients(){
+  const wrap = $('mpClientsList'); wrap.innerHTML='';
+  clients.forEach(c=>{
+    const el = document.createElement('div'); el.className='mp-client';
+    el.innerHTML = `<div><div style="font-weight:800">${c.name}</div><div class="mp-client-meta">${c.mobile||''}</div></div>`;
+    const btn = document.createElement('button'); btn.className='mp-select-btn'; btn.textContent = (selectedClient && selectedClient.id===c.id)?'محدد':'اختر';
+    btn.addEventListener('click', ()=> { selectedClient = c; renderClients(); showToast('تم اختيار العميل: '+c.name); });
+    el.appendChild(btn); wrap.appendChild(el);
+  });
+}
+
+/* Add product to invoice (increase qty if exists) */
+function addProductToInvoice(productId){
+  const p = products.find(x=> x.id===productId);
+  if (!p) return showToast('منتج غير موجود','error');
+  let it = invoiceItems.find(x=> x.productId===productId);
+  if (it) { it.qty = Number(it.qty) + 1; } 
+  else {
+    // default selling price: last active batch.sale_price || product.base_sell
+    const agg = computeProductAggregates(productId);
+    const defaultPrice = agg.last_batch ? Number(agg.last_batch.sale_price) : Number(p.base_sell);
+    invoiceItems.push({productId, qty:1, selling_price: defaultPrice, allocations: []});
+  }
+  renderInvoice();
+}
+
+/* Render invoice table */
+function renderInvoice(){
+  const tbody = $('mpInvTbody'); tbody.innerHTML='';
+  invoiceItems.forEach((it, idx)=>{
+    const p = products.find(x=> x.id===it.productId);
+    // compute preview allocations locally
+    const preview = computeFifoAllocations(it.productId, it.qty);
+    it.allocations = preview.allocations; // attach preview (not persisted)
+    const cogs = preview.totalCost;
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td class="name-col">${p.name}<div class="mp-small">#${p.product_code}</div></td>
+      <td><input class="mp-input" type="number" value="${it.qty}" min="0" step="0.0001" data-idx="${idx}" data-field="qty"></td>
+      <td>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select class="mp-select" data-idx="${idx}" data-field="priceSource">
+            <option value="batch">سعر آخر دفعة</option>
+            <option value="product">سعر المنتج</option>
+            <option value="custom">مخصص</option>
+          </select>
+          <input class="mp-input" type="number" data-idx="${idx}" data-field="selling_price" value="${formatNum(it.selling_price)}" step="0.01">
+        </div>
+        <div class="mp-small">COGS تقريبى: ${formatNum(cogs)}</div>
+      </td>
+      <td><button class="mp-btn-ghost" data-idx="${idx}" data-action="preview">معاينة</button></td>
+      <td class="mp-small">${formatNum(it.qty * it.selling_price)} ج</td>
+      <td><button class="mp-btn-ghost" data-idx="${idx}" data-action="remove">حذف</button></td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  // attach events
+  tbody.querySelectorAll('input[data-field]').forEach(inp=>{
+    inp.addEventListener('change', (e)=>{
+      const idx = Number(e.target.dataset.idx); const field = e.target.dataset.field;
+      const val = e.target.value;
+      if (field === 'qty') invoiceItems[idx].qty = Number(val) || 0;
+      if (field === 'selling_price') invoiceItems[idx].selling_price = Number(val) || 0;
+      renderInvoice();
+    });
+  });
+  tbody.querySelectorAll('select[data-field="priceSource"]').forEach(sel=>{
+    sel.addEventListener('change', (e)=>{
+      const idx = Number(e.target.dataset.idx);
+      const val = e.target.value;
+      const p = products.find(x=> x.id===invoiceItems[idx].productId);
+      const agg = computeProductAggregates(p.id);
+      if (val === 'batch' && agg.last_batch) invoiceItems[idx].selling_price = Number(agg.last_batch.sale_price);
+      else if (val === 'product') invoiceItems[idx].selling_price = Number(p.base_sell);
+      // if custom leave as is
+      renderInvoice();
+    });
+  });
+  tbody.querySelectorAll('button[data-action="preview"]').forEach(b=>{
+    b.addEventListener('click', (e)=> {
+      const idx = Number(e.target.dataset.idx); openPreviewForItem(idx);
+    });
+  });
+  tbody.querySelectorAll('button[data-action="remove"]').forEach(b=>{
+    b.addEventListener('click', (e)=> {
+      const idx = Number(e.target.dataset.idx); invoiceItems.splice(idx,1); renderInvoice();
+    });
+  });
+
+  computeTotals();
+}
+
+/* compute totals: revenue, cogs, profit, units */
+function computeTotals(){
+  let rev=0, cogs=0, units=0;
+  invoiceItems.forEach(it=>{
+    rev += Number(it.qty) * Number(it.selling_price || 0);
+    const preview = computeFifoAllocations(it.productId, it.qty);
+    cogs += preview.totalCost;
+    units += Number(it.qty);
+  });
+  $('sumRevenue').textContent = formatNum(rev) + ' ج';
+  $('sumCOGS').textContent = formatNum(cogs) + ' ج';
+  $('sumProfit').textContent = formatNum(rev - cogs) + ' ج';
+  $('sumUnits').textContent = formatNum(units);
+}
+
+/* compute FIFO allocations (preview) purely client-side using batches state */
+function computeFifoAllocations(productId, qty){
+  let need = Number(qty) || 0;
+  const list = (batches[productId] || []).slice().sort((a,b)=>{
+    // sort by received_at asc (older first), fallback to id
+    if ((a.received_at||'') < (b.received_at||'')) return -1;
+    if ((a.received_at||'') > (b.received_at||'')) return 1;
+    return a.id - b.id;
+  });
+  const allocations = [];
+  for (const b of list){
+    if (need <= 0) break;
+    if (b.status !== 'active') continue;
+    const avail = Number(b.remaining || 0);
+    if (avail <= 0) continue;
+    const take = Math.min(avail, need);
+    allocations.push({batchId: b.id, take, unit_cost: Number(b.unit_cost), batch_remaining_before: avail});
+    need -= take;
+  }
+  const enough = need <= 0;
+  const totalCost = allocations.reduce((s,a)=> s + (a.take * a.unit_cost), 0);
+  const avgCost = allocations.length ? totalCost / allocations.reduce((s,a)=> s + a.take, 0) : 0;
+  return {allocations, enough, totalCost, avgCost};
+}
+
+/* Open batches modal for a product */
+function openBatchesModal(productId){
+  const p = products.find(x=> x.id===productId);
+  const agg = computeProductAggregates(productId);
+  $('batchesModalTitle').textContent = `دفعات — ${p.name}`;
+  $('batchesModalProduct').textContent = `#${p.product_code} — متبقي active: ${formatNum(agg.remaining_active)} • قيمة: ${formatNum(agg.stock_value_active)} ج`;
+  const wrap = $('batchesModalContent');
+  const rows = (batches[productId] || []).slice().sort((a,b)=> (b.received_at||'') < (a.received_at||'') ? 1 : -1);
+  if (!rows.length) { wrap.innerHTML = '<div class="mp-small">لا توجد دفعات لهذا المنتج.</div>'; $('mpBatchesModal').style.display='flex'; return; }
+  let html = `<table class="mp-table-small"><thead><tr><th>رقم الدفعة</th><th>تاريخ</th><th>الكمية</th><th>المتبقي</th><th>سعر الشراء</th><th>سعر البيع</th><th>الحالة</th><th>ملاحظات</th></tr></thead><tbody>`;
+  rows.forEach(b=>{
+    const st = (b.status==='active'?'فعال': b.status==='consumed' ? 'مستهلك' : b.status);
+    html += `<tr>
+      <td class="mp-small">${b.id}</td>
+      <td class="mp-small">${b.received_at||b.created_at||''}</td>
+      <td>${formatNum(b.qty)}</td>
+      <td>${formatNum(b.remaining)}</td>
+      <td>${formatNum(b.unit_cost)}</td>
+      <td>${formatNum(b.sale_price)}</td>
+      <td class="mp-small">${st}</td>
+      <td class="mp-small">${b.notes||'-'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  $('mpBatchesModal').style.display = 'flex';
+}
+
+/* open preview modal for a single item */
+function openPreviewForItem(idx){
+  const it = invoiceItems[idx];
+  if (!it) return;
+  const p = products.find(x=> x.id===it.productId);
+  const preview = computeFifoAllocations(it.productId, it.qty);
+  $('previewModalSub').textContent = `${p.name} — مطلوب: ${formatNum(it.qty)} • ${preview.enough ? 'تغطية كاملة' : 'الرصيد غير كافٍ'}`;
+  let html = `<div class="mp-small">تفاصيل التخصيص (FIFO)</div><table class="mp-table-small" style="margin-top:10px"><thead><tr><th>دفعة</th><th>مأخوذ</th><th>سعر شراء</th><th>تكلفة</th><th>متبقي قبل السحب</th></tr></thead><tbody>`;
+  preview.allocations.forEach(a=>{
+    html += `<tr><td class="mp-small">${a.batchId}</td><td>${formatNum(a.take)}</td><td class="mp-small">${formatNum(a.unit_cost)}</td><td>${formatNum(a.take * a.unit_cost)}</td><td class="mp-small">${formatNum(a.batch_remaining_before)}</td></tr>`;
+  });
+  html += `</tbody></table><div style="margin-top:8px" class="mp-small">إجمالي COGS: ${formatNum(preview.totalCost)} ج — متوسط تكلفة/وحدة: ${formatNum(preview.avgCost)}</div>`;
+  if (!preview.enough) html += `<div style="color:var(--rose);margin-top:8px">تحذير: الكمية المطلوبة تفوق المتاح. المتاح: ${formatNum(computeProductAggregates(it.productId).remaining_active)}</div>`;
+  $('mpPreviewContent').innerHTML = html;
+  $('mpPreviewModal').style.display = 'flex';
+}
+
+/* preview all items */
+$('mpPreviewAll').addEventListener('click', ()=>{
+  if (!invoiceItems.length) return showToast('لا توجد بنود للمعاينة','error');
+  let html = '';
+  invoiceItems.forEach((it,idx)=> {
+    const p = products.find(x=> x.id===it.productId);
+    const pr = computeFifoAllocations(it.productId, it.qty);
+    html += `<div style="margin-bottom:12px"><strong>${p.name}</strong> — مطلوب: ${formatNum(it.qty)} — COGS: ${formatNum(pr.totalCost)}<div style="margin-top:6px">`;
+    if (pr.allocations.length){
+      html += `<table class="mp-table-small"><thead><tr><th>دفعة</th><th>مأخوذ</th><th>سعر</th><th>تكلفة</th></tr></thead><tbody>`;
+      pr.allocations.forEach(a=> html += `<tr><td class="mp-small">${a.batchId}</td><td>${formatNum(a.take)}</td><td class="mp-small">${formatNum(a.unit_cost)}</td><td>${formatNum(a.take * a.unit_cost)}</td></tr>`);
+      html += `</tbody></table>`;
+    } else html += '<div class="mp-small">لا تخصيصات.</div>';
+    if (!pr.enough) html += `<div style="color:var(--rose);margin-top:6px">تحذير: الرصيد غير كافٍ (المتاح: ${formatNum(computeProductAggregates(it.productId).remaining_active)})</div>`;
+    html += `</div></div>`;
+  });
+  $('previewModalSub').textContent = `معاينة كاملة — ${invoiceItems.length} بنود`;
+  $('mpPreviewContent').innerHTML = html;
+  $('mpPreviewModal').style.display = 'flex';
+});
+
+/* clear items */
+$('mpClearItems').addEventListener('click', ()=> { invoiceItems = []; renderInvoice(); });
+
+/* close modals */
+$('mpCloseBatches').addEventListener('click', ()=> $('mpBatchesModal').style.display='none');
+$('mpClosePreview').addEventListener('click', ()=> $('mpPreviewModal').style.display='none');
+
+/* confirm invoice -> validate and then "simulate" commit (we won't alter DB here, but simulate allocations and update local batches) */
+$('mpConfirm').addEventListener('click', ()=>{
+  // validation
+  if (!invoiceItems.length) return showToast('أضف بنوداً قبل التأكيد','error');
+  if (!selectedClient) return showToast('اختر عميلاً قبل التأكيد','error');
+
+  // simulate transactional allocation: verify all items covered
+  const backupBatches = JSON.parse(JSON.stringify(batches));
+  const allocationsForInvoice = [];
+  let ok = true;
+  for (const it of invoiceItems){
+    const need = Number(it.qty);
+    const preview = computeFifoAllocations(it.productId, need);
+    if (!preview.enough){ ok = false; showToast(`الرصيد غير كافٍ للمنتج ${products.find(p=>p.id===it.productId).name}`, 'error', 4000); break; }
+    allocationsForInvoice.push({productId: it.productId, allocations: preview.allocations, selling_price: it.selling_price, qty: it.qty});
+    // apply to local batches (simulate update)
+    let remainingNeed = need;
+    const list = (batches[it.productId] || []).slice().sort((a,b)=> (a.received_at||'') < (b.received_at||'') ? -1 : 1);
+    for (const b of list){
+      if (remainingNeed<=0) break;
+      if (b.status!=='active') continue;
+      const take = Math.min(Number(b.remaining||0), remainingNeed);
+      if (take<=0) continue;
+      b.remaining = Number(b.remaining) - take;
+      if (b.remaining <= 0) b.status = 'consumed';
+      remainingNeed -= take;
+    }
+  }
+  if (!ok){ batches = backupBatches; return; }
+  // success: compute invoice totals and "persist" locally
+  // (in real system: here you'd do DB transaction to insert invoice, invoice_out_items and sale_item_allocations)
+  computeTotals();
+  showToast('تم إنشاء الفاتورة (محاكاة) بنجاح','success',3500);
+  // optionally clear invoice
+  invoiceItems = []; renderInvoice(); renderProducts(); renderClients();
+});
+
+/* initial render */
+function init(){
+  renderProducts(); renderClients(); renderInvoice();
+  // search handlers
+  $('mpProdSearch').addEventListener('input', ()=> renderProducts());
+  $('mpClientSearch').addEventListener('input', ()=> {
+    const q = $('mpClientSearch').value.trim().toLowerCase();
+    const filtered = clients.filter(c=> (c.name + ' ' + c.mobile).toLowerCase().includes(q));
+    const wrap = $('mpClientsList'); wrap.innerHTML='';
+    filtered.forEach(c=> {
+      const el = document.createElement('div'); el.className='mp-client';
+      el.innerHTML = `<div><div style="font-weight:800">${c.name}</div><div class="mp-client-meta">${c.mobile||''}</div></div>`;
+      const btn = document.createElement('button'); btn.className='mp-select-btn'; btn.textContent = (selectedClient && selectedClient.id===c.id)?'محدد':'اختر';
+      btn.addEventListener('click', ()=> { selectedClient = c; renderClients(); showToast('تم اختيار العميل: '+c.name); });
+      el.appendChild(btn); wrap.appendChild(el);
+    });
+  });
+}
+init();
+
+/* theme toggle (light/dark) simple) */
+$('mp-theme').addEventListener('click', ()=> {
+  document.body.style.background = document.body.style.background ? '' : '#07142a';
+});
+
+</script>
+</body>
+</html>

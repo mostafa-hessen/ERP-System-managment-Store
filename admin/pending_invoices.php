@@ -361,9 +361,9 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <?php endif; ?>
         </div>
 
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover table-bordered align-middle">
+        <!-- <div class="card-body"> -->
+            <div class="table-responsive custom-table-wrapper">
+                <table class="tabl custom-table">
                     <thead class="table-dark">
                         <tr>
                             <th>رقم الفاتورة</th>
@@ -421,7 +421,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                     </tbody>
                 </table>
             </div>
-        </div>
+        <!-- </div> -->
     </div>
 
     <!-- ملخص الإجماليات -->

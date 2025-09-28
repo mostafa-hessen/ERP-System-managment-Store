@@ -240,8 +240,8 @@ require_once BASE_DIR . 'partials/sidebar.php';
         </div>
 
         <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover table-bordered align-middle mb-0">
+            <div class="table-responsive custom-table-wrapper">
+                <table class="tabl custom-table">
                     <thead class="table-dark">
                         <tr>
                             <th>رقم الفاتورة</th>

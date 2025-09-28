@@ -341,14 +341,14 @@ $back_link = $_SERVER['HTTP_REFERER'] ?? (BASE_URL . 'admin/pending_invoices.php
 
       <!-- بنود -->
       <div style="margin-top:18px;">
-        <div style="border-radius:10px; overflow:hidden; border:1px solid var(--border);">
-          <table class="table" aria-labelledby="itemsTitle">
-            <thead>
+        <div style="border-radius:10px; overflow:hidden; border:1px solid var(--border);" class="custom-table-wrapper">
+          <table class="ta=ble  custom-table" aria-labelledby="itemsTitle">
+            <thead class="center">
               <tr>
                 <th style="width:40px;">#</th>
                 <th>اسم / كود</th>
                 <th class="text-center">كمية</th>
-                <th class="text-end">سعر الوحدة</th>
+                <th class="text-end">سعر البيع</th>
                 <th class="text-end">الإجمالي</th>
               </tr>
             </thead>
@@ -385,7 +385,7 @@ $back_link = $_SERVER['HTTP_REFERER'] ?? (BASE_URL . 'admin/pending_invoices.php
             <div class="mb-2" style="white-space:pre-wrap;"><?php echo nl2br(e($invoice['notes'])); ?></div>
             <button id="copyNotesBtn" class="btn" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;">نسخ الملاحظات</button>
           <?php else: ?>
-            <div class="text-muted">لا توجد ملاحظات.</div>
+            <div class="custom-text">لا توجد ملاحظات.</div>
           <?php endif; ?>
         </div>
       </div>

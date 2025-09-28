@@ -1,0 +1,133 @@
+ممتاز ولكن هناك تعديلات 
+1- العميل
+** عاوز تثبيت عميل نقدي في الاعلي وعند اختياره او اختيرا اي عميل يظهر بالاعلي العميل المختار ويعمل selecte on tabel and disapled all cleint  كما كان قديما
+وعند اختيرا العميل يظهر مثل
+
+👤 العميل: العربي
+📞 الموبايل: 01157787321
+🏙️ المدينة: Fayoum
+📍 العنوان: Sheikh Yusuf ST, Fayoum, Egypt**
+
+** في سيمشن اسمه العميل المحددد لايوجد 
+المربع اريد ان يظهر فيه معلومات العميل المختار ولو عميل نقدي يظهر عميل نقدي ويظهرفي الاعلي بشكل مثبت ليسهل اختياره
+وزر الغاء العميل المختار في المربع
+
+ زر اضافه عميل يظهر في الاعلي ويظهر نافذه منبثقه تحتوي علي فورم كما كان فيها فالديشن كما كان
+
+** مثال 
+<div class="col customers">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong>العملاء</strong>
+          <div style="display:flex;gap:6px">
+            <button type="button" id="openAddCustomerModal" class="btn ghost">إضافة</button>
+            <!-- <a href="http://localhost/saied_test/customer/insert.php" class="btn ghost" target="_blank">صفحة الإضافة</a> -->
+          </div>
+        </div>
+
+        <div style="margin-bottom:8px;display:flex;gap:6px;align-items:center">
+          <input type="text" id="customer_search" placeholder="ابحث باسم أو موبايل..." style="padding:6px;border:1px solid #ddd;border-radius:6px;width:100%">
+        </div>
+
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+          <button type="button" id="cashCustomerBtn" class="btn selected">نقدي (ثابت)</button>
+          <div id="selectedCustomerBox" class="small-muted"><div>العميل الحالي: <strong>عميل نقدي</strong></div>
+        <div style="margin-top:6px"><button id="btnUnselectCustomer" type="button" class="btn ghost">إلغاء اختيار العميل</button></div></div>
+          <div class="small-muted">اضغط على "اختر" عند العميل لتحديده، أو استخدم "نقدي (ثابت)" لوضع العميل النقدي مباشرة في الفاتورة.</div>
+        </div>
+
+        <div id="customer_list"><div class="customer-item disabled" data-cid="72"><div><div style="font-weight:700">العربي</div><div class="small-muted">01157787321 — Fayoum</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="71"><div><div style="font-weight:700">احمد</div><div class="small-muted">01115473776 — مدابغ</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="64"><div><div style="font-weight:700">tata</div><div class="small-muted">01115273772 — 1</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="19"><div><div style="font-weight:700">d</div><div class="small-muted">01034863811 — </div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="16"><div><div style="font-weight:700">b</div><div class="small-muted"> — </div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="15"><div><div style="font-weight:700">Mostafa Hussien Ramadan</div><div class="small-muted">01157787111 — Fayoum</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="14"><div><div style="font-weight:700">Mostafa Hussien Ramadan</div><div class="small-muted">01032486382 — Fayoum</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="13"><div><div style="font-weight:700">Mostafa Hussien Ramadan</div><div class="small-muted">11111111111 — Fayoum</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="12"><div><div style="font-weight:700">Mostafa Hussien Ramadan</div><div class="small-muted">01157787112 — Fayoum</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="11"><div><div style="font-weight:700">Mostafa Hussien Ramadan</div><div class="small-muted">01032486387 — Fayoum</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="10"><div><div style="font-weight:700">مصطفي حسين رمضان عطيه</div><div class="small-muted">01096590768 — الفيوم</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div><div class="customer-item disabled" data-cid="7"><div><div style="font-weight:700">Mostafa Hussien Ramadan</div><div class="small-muted">01157787113 — Fayoum</div></div>
+                    <div style="min-width:80px"><button type="button" class="btn ghost choose-cust">اختر</button></div></div></div>
+      </div>
+
+<div id="modalAddCustomer" class="modal-backdrop" aria-hidden="true" style="display: none;">
+  <div class="mymodal">
+    <h3>إضافة عميل جديد</h3>
+    <div id="addCustMsg"></div>
+    <div class="form-group">
+      <input id="new_name" placeholder="الاسم" class="note-box">
+      <input id="new_mobile" placeholder="رقم الموبايل (11 رقم)" class="note-box">
+      <input id="new_city" placeholder="المدينة" class="note-box">
+      <input id="new_address" placeholder="العنوان" class="note-box">
+        <textarea id="new_notes" placeholder="ملاحظات عن العميل (اختياري)" class="note-box" rows="3"></textarea>
+
+      <div class="actions">
+        <button id="closeAddCust" type="button" class="btn ghost">إلغاء</button>
+        <button id="submitAddCust" type="button" class="btn primary">حفظ وإختيار</button>
+      </div>
+    </div>
+  </div>
+</div>
+2- UI
+2-1بلاش تسمي ال modalلانه بيعمل تعارض مع بوتستراب  
+2-2   ثبت  راس الجدول في النتصف + اللون سئ في ال دارك بلاش تعتمد علي كلاس البوتسراب
+2-3 الغي زر  تبديل الثيم وزر مزامنه لادفعات 
+
+
+3- العمود في المنتصف
+3-1 - لو ضغط علي زر اتمام فاتور 
+يظهر توست لو مش محتار بنود اوش  مش مختار عميل
+
+3-2 لو ضغت علي الزر ده لازم يظهر كونفيرم مثال 
+كلاحظه يظهر بردو حاله الفاتوره
+<div id="modalConfirm" class="modal-backdrop" aria-hidden="true" style="display: none;">
+  <div class="mymodal">
+    <h3>تأكيد إتمام الفاتورة</h3>
+    <div id="confirmClientPreview"><div class="cust-preview"><p><strong>👤 العميل:</strong> عميل نقدي</p></div></div>
+    <div id="confirmItemsPreview" class="modal-preview"><div class="modal-item">
+        <div class="item-info">
+          <strong>mm</strong>
+          <div class="small-muted">الكمية: 1 — سعر البيع: 100.00</div>
+        </div>
+        <div class="item-price">100.00</div>
+      </div></div>
+    <div class="modal-footer">
+      <div>
+        <button id="confirmCancel" type="button" class="btn ghost">إلغاء</button>
+        <button id="confirmSend" type="button" class="btn success">تأكيد وإرسال</button>
+      </div>
+      <div><strong>الإجمالي:</strong> <span id="confirm_total_before">100.00</span></div>
+    </div>
+  </div>
+</div>
+
+3-4 لو دست اتمام يطلع اشعار انه تم اضافه فاتوره رقم افاتوره وحالتها  
+ثم يظهر زرين زؤ عمل فاتوره جديده ف ينشي ؤاس فاتوره في نفس الصفحه ويفرع الصفحه من اي بينانات قديمه
+ زر اخر الذهاب للفاتور
+ويودين علي صفحه الفواتير 
+علي حسب  الحاله لو مؤجل يوديني غير  مؤجل لو تم يوديني علي تم هوريك 
+delivered_invoices.php - pending_invoices.php
+
+3-4 زر الطباعه بدون ملاحظات 
+مثال فاتورة
+�� العميل: العربي
+�� الموبايل: 01157787321
+Sheikh Yusuf ST, Fayoum, Egypt :العنوان��
+المنتج الكمية سعر البيع اإلجمالي
+100.00 100.00 1 mm
+اختبار بعد التعديلش 1 20.00 20.00
+اإلجمالي: 120.00 ج.م
+
+3-5 الجدول يظهر فيه زر الحذف لون احمر
+3-6 لواختار منتج وكان الكميه اكتر من المتاج
+يظهر علي البند اشعار بالخططا ويميزه عن الباقي شوف المناسب اي ويظهر المشكله اي
+3-7 -  امكانيه تحديد سعر البيع منين  اخر دفعه فعاله ام من المننج من جدول المنتجات ام من سعر بيع الدفعه 
+عاوزها تكون  قيمه باتدائيه اخر سعر بيع لاخر دفعه فعاله
+ملاحظه في حقل يحمل رقم سغر البيع اريده يتغير علي حسب السعر النختار
+3-8 مودال عرض ال fifo عرض البيناتا مش احسن حاجه نسقه وكبره شويه التاريخ والمتبقي كله ملاص لبغض
+ملاحظه كمان عند الضغط علي زر معاينه fifo للمنتج يظهر متبقي و ماخوذ 
+عاوز رقم المتبقي يبقي عبار عن طرح الماخوذ ناقص المتيقي 
+اما الماخوذ يظهر الماطلوب فعلا
+
+4- عمود المنتجات 
+4-2 النافذه الخاصه بعرض الدفعات سيئه جدا في العرض وايضا لايوجد تمييز بصري لحالات الدفعه بجيث مثلا لو مستهلك يبقي بلون ولو فعال اخضر وهكذا

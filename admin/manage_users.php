@@ -82,9 +82,9 @@ $csrf_token = $_SESSION['csrf_token'];
         <div class="card-header">
             قائمة المستخدمين المسجلين
         </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-striped table-hover table-bordered align-middle">
+        <!-- <div class="card-body"> -->
+            <div class="table-responsive custom-table-wrapper">
+                <table class="tale custom-table customized">
                     <thead class="table-dark">
                         <tr>
                             <th>#</th>
@@ -141,7 +141,7 @@ $csrf_token = $_SESSION['csrf_token'];
                 </table>
             </div>
         </div>
-    </div>
+    <!-- </div> -->
 </div>
 
 <?php

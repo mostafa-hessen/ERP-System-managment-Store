@@ -55,20 +55,83 @@ if ($stmt = $conn->prepare("
 }
 
 /* --- منتجات منخفضة الرصيد --- */
+/* --- منتجات منخفضة الرصيد (باحتساب remaining من الدفعات - active أو consumed) --- */
+/* --- منتجات منخفضة الرصيد (باحتساب remaining من الدفعات - active أو consumed) --- */
 $total_low_stock_items = 0;
+$total_remaining_all = 0;
 $low_stock_preview = [];
-$res = $conn->query("SELECT COUNT(*) AS c FROM products WHERE reorder_level > 0 AND current_stock <= reorder_level");
+
+// Subquery لتجميع remaining
+$batchesAggSql = "
+    SELECT product_id, SUM(remaining) AS total_remaining
+    FROM batches
+    WHERE status IN ('active','consumed')
+    GROUP BY product_id
+";
+
+// 1) إجمالي عدد المنتجات المنخفضة
+$countSql = "
+    SELECT COUNT(*) AS c
+    FROM products p
+    LEFT JOIN (
+        $batchesAggSql
+    ) b ON p.id = b.product_id
+    WHERE p.reorder_level > 0
+      AND COALESCE(b.total_remaining, 0) <= p.reorder_level
+";
+$res = $conn->query($countSql);
 $total_low_stock_items = intval($res->fetch_assoc()['c'] ?? 0);
 
-$res = $conn->query("SELECT id, product_code, name, current_stock, reorder_level 
-                     FROM products WHERE reorder_level > 0 AND current_stock <= reorder_level 
-                     ORDER BY (reorder_level - current_stock) DESC LIMIT 50");
+// 2) إجمالي الكمية المتبقية لكل المنتجات المنخفضة
+$remainingSql = "
+    SELECT SUM(COALESCE(b.total_remaining, 0)) AS total_remaining_all
+    FROM products p
+    LEFT JOIN (
+        $batchesAggSql
+    ) b ON p.id = b.product_id
+    WHERE p.reorder_level > 0
+      AND COALESCE(b.total_remaining, 0) <= p.reorder_level
+";
+$res = $conn->query($remainingSql);
+$total_remaining_all = floatval($res->fetch_assoc()['total_remaining_all'] ?? 0);
+
+// 3) Preview (زي ما شرحنا قبل كده)…
+
+
+// 2) معاينة (preview) لمنتجات منخفضة الرصيد — نعرض المتبقي من الدفعات جنب current_stock
+$previewSql = "
+    SELECT
+      p.id,
+      p.product_code,
+      p.name,
+      p.unit_of_measure,
+      p.current_stock,
+      p.reorder_level,
+      COALESCE(b.total_remaining, 0) AS batches_remaining
+    FROM products p
+    LEFT JOIN (
+        $batchesAggSql
+    ) b ON p.id = b.product_id
+    WHERE p.reorder_level > 0
+      AND COALESCE(b.total_remaining, 0) <= p.reorder_level
+    ORDER BY (p.reorder_level - COALESCE(b.total_remaining, 0)) DESC, p.name ASC
+    LIMIT 50
+";
+$res = $conn->query($previewSql);
 while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
+
 ?>
 
 <style>
     /* ===== Scoped improvements for dashboard stats (inside .welcome) ===== */
+.low-stock {
+    max-height: 350px;
+    overflow-y: auto    ;
+    /* border-radius: 20px !important; */
 
+
+
+}
 </style>
 <div class="container welcome mt-5">
     <!-- الوصول السريع -->
@@ -165,35 +228,40 @@ while ($row = $res->fetch_assoc()) $low_stock_preview[] = $row;
     </div>
 
     <!-- جدول منتجات منخفضة الرصيد -->
-    <div style="margin-top:18px">
-        <div style="background:var(--surface); padding:14px; border-radius:var(--radius); box-shadow:var(--shadow-1); border:1px solid var(--border);">
-            <h3 style="margin:0 0 10px 0">تفاصيل المنتجات منخفضة الرصيد</h3>
-            <?php if ($total_low_stock_items > 0): ?>
-                <table class="low-table" role="table">
-                    <thead>
-                        <tr>
-                            <th>المنتج</th>
-                            <th>الكود</th>
-                            <th>الرصيد الحالي</th>
-                            <th>حد إعادة الطلب</th>
+<div style="margin-top:18px">
+    <div class="low-stock" style="background:var(--surface); padding:14px; border-radius:var(--radius); box-shadow:var(--shadow-1); border:1px solid var(--border);">
+        <h3 style="margin:0 0 10px 0">تفاصيل المنتجات منخفضة الرصيد</h3>
+        <?php if ($total_low_stock_items > 0): ?>
+            <table class="low-table" role="table">
+                <thead>
+                    <tr>
+                        <th>المنتج</th>
+                        <th>الكود</th>
+                        <!-- <th>الرصيد (current_stock)</th> -->
+                        <th>المتبقي من الدفعات</th>
+                        <th>حد إعادة الطلب</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($low_stock_preview as $row): ?>
+                        <tr class="low-row">
+                            <td><?php echo e($row['name']); ?></td>
+                            <td><?php echo e($row['product_code']); ?></td>
+                            <!-- <td><?php echo number_format($row['current_stock'], 2); ?></td> -->
+                            <td class="fw-bold text-danger">
+                                <?php echo number_format($row['batches_remaining'], 2); ?>
+                            </td>
+                            <td><?php echo number_format($row['reorder_level'], 2); ?></td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($low_stock_preview as $row): ?>
-                            <tr class="low-row">
-                                <td><?php echo e($row['name']); ?></td>
-                                <td><?php echo e($row['product_code']); ?></td>
-                                <td><?php echo e($row['current_stock']); ?></td>
-                                <td><?php echo e($row['reorder_level']); ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php else: ?>
-                <div class="small text-muted">لا توجد منتجات منخفضة الرصيد الآن — كل شيء على ما يرام ✅</div>
-            <?php endif; ?>
-        </div>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php else: ?>
+            <div class="small text-muted">لا توجد منتجات منخفضة الرصيد الآن — كل شيء على ما يرام ✅</div>
+        <?php endif; ?>
     </div>
+</div>
+
 
 
 

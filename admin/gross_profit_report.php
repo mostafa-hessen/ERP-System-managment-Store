@@ -227,23 +227,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
 
 
-.table-wrapper { border-radius:12px; overflow:hidden; box-shadow:var(--shadow-1); background:var(--surface); }
-.table-scroll {
-  max-height: 520px; /* adjust as needed */
-  overflow: auto;
-}
-.table { width:100%; border-collapse:collapse; min-width: 800px; }
-.table thead th {
-  position: sticky;
-  top: 0;
-  background: var(--surface-2);
-  z-index: 4;
-  padding:10px 12px;
-  border-bottom:1px solid var(--border);
-  text-align:left;
-}
-.table tbody td { padding:10px 12px; border-bottom:1px solid rgba(0,0,0,0.04); vertical-align:middle; }
-.table tfoot td { padding:10px 12px; border-top:1px solid var(--border); background:var(--surface-2); }
 
 /* profit badge */
 .badge-profit { font-weight:700; padding:6px 8px; border-radius:6px; display:inline-block; }
@@ -333,9 +316,9 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <div class="alert alert-info">لا توجد فواتير مسلّمة خلال الفترة المحددة.</div>
         <?php else: ?>
             <div class="table-wrapper mb-3">
-                <div class="table-scroll">
-                    <table class="table mb-0" id="reportTable">
-                        <thead>
+                <div class=" custom-table-wrapper">
+                    <table class="custom-table mb-0" id="reportTable">
+                        <thead class="center">
                             <tr>
                                 <th style="width:90px"># فاتورة</th>
                                 <th style="width:160px">التاريخ</th>
