@@ -142,7 +142,13 @@ require_once BASE_DIR . 'partials/sidebar.php';
     @media (min-width: 992px) {
         .content-max { max-width: 1200px; margin: 0 auto; }
     }
+    .expenses .custom-table-wrapper{
+                height: 52vh;
+    }
+
+
 </style>
+<div class="expenses ">
 
 <div class="container-fluid mt-4 pt-3">
     <div class="content-max">
@@ -247,9 +253,9 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                             <form action="<?php echo $edit_expense_link_base; ?>" method="post" class="d-inline">
                                                 <input type="hidden" name="expense_id_to_edit" value="<?php echo $expense["id"]; ?>">
                                                 <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                <button type="submit" class="btn btn-warning btn-sm" title="تعديل المصروف">
+                                                <!-- <button type="submit" class="btn btn-warning btn-sm" title="تعديل المصروف">
                                                     <i class="fas fa-edit"></i>
-                                                </button>
+                                                </button> -->
                                             </form>
                                             <form action="<?php echo $current_page_url_for_forms; ?>" method="post" class="d-inline ms-1">
                                                 <input type="hidden" name="expense_id_to_delete" value="<?php echo $expense["id"]; ?>">
@@ -280,6 +286,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                 </div>
         </div>
     </div>
+</div>
 </div>
 
 <?php

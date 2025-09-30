@@ -286,12 +286,12 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                             </form>
 
                                             <!-- delete -> calls delete_sales_invoice.php (keeps delivered->pending behaviour outside) -->
-                                            <form action="<?php echo BASE_URL; ?>admin/delete_sales_invoice.php" method="post" class="d-inline ms-1" style="display:inline-block" onsubmit="return confirm('هل أنت متأكد من حذف الفاتورة #<?php echo e($row['id']); ?>؟ سيتم إعادة الكميات للمخزون.');">
+                                            <!-- <form action="<?php echo BASE_URL; ?>admin/delete_sales_invoice.php" method="post" class="d-inline ms-1" style="display:inline-block" onsubmit="return confirm('هل أنت متأكد من حذف الفاتورة #<?php echo e($row['id']); ?>؟ سيتم إعادة الكميات للمخزون.');">
                                                 <input type="hidden" name="invoice_out_id_to_delete" value="<?php echo e($row["id"]); ?>">
                                                 <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                                                 <input type="hidden" name="redirect_to" value="delivered">
                                                 <button type="submit" name="delete_sales_invoice" class="btn btn-danger btn-sm" title="حذف"><i class="fas fa-trash"></i></button>
-                                            </form>
+                                            </form> -->
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -361,7 +361,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                     <input type="hidden" name="invoice_out_id_to_delete" id="modal_invoice_id_delete" value="">
                     <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
                     <input type="hidden" name="redirect_to" value="delivered">
-                    <button type="submit" name="delete_sales_invoice" class="btn btn-danger" id="modalDeleteBtn"><i class="fas fa-trash"></i> حذف</button>
+                    <!-- <button type="submit" name="delete_sales_invoice" class="btn btn-danger" id="modalDeleteBtn"><i class="fas fa-trash"></i> حذف</button> -->
                 </form>
             </div>
         </div>

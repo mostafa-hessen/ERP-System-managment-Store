@@ -965,6 +965,9 @@ append_invoice_note($conn, $invoice_id, $note_line);
 // ---------- عرض الصفحة (الفلترة و الجدول) ----------
 $selected_supplier_id = isset($_GET['supplier_filter_val']) ? intval($_GET['supplier_filter_val']) : '';
 $selected_status = isset($_GET['status_filter_val']) ? trim($_GET['status_filter_val']) : '';
+// فلتر بحث مباشر برقم الفاتورة (invoice_out -> id)
+$search_invoice_id = isset($_GET['invoice_out_id']) ? intval($_GET['invoice_out_id']) : 0;
+
 
 $suppliers_list = [];
 $sql_suppliers = "SELECT id, name FROM suppliers ORDER BY name ASC";
@@ -986,16 +989,36 @@ $sql_select_invoices = "SELECT pi.id, pi.supplier_invoice_number, pi.purchase_da
 $conds = [];
 $params = [];
 $types = '';
-if (!empty($selected_supplier_id)) {
-  $conds[] = "pi.supplier_id = ?";
-  $params[] = $selected_supplier_id;
+// if (!empty($selected_supplier_id)) {
+//   $conds[] = "pi.supplier_id = ?";
+//   $params[] = $selected_supplier_id;
+//   $types .= 'i';
+// }
+// if (!empty($selected_status)) {
+//   $conds[] = "pi.status = ?";
+//   $params[] = $selected_status;
+//   $types .= 's';
+// }
+
+
+if (!empty($search_invoice_id)) {
+  $conds[] = "pi.id = ?"; // exact match on invoice id
+  $params[] = $search_invoice_id;
   $types .= 'i';
-}
-if (!empty($selected_status)) {
-  $conds[] = "pi.status = ?";
-  $params[] = $selected_status;
-  $types .= 's';
-}
+} 
+  if (!empty($selected_supplier_id)) {
+    $conds[] = "pi.supplier_id = ?";
+    $params[] = $selected_supplier_id;
+    $types .= 'i';
+  }
+  if (!empty($selected_status)) {
+    $conds[] = "pi.status = ?";
+    $params[] = $selected_status;
+    $types .= 's';
+  }
+
+
+
 if (!empty($conds)) $sql_select_invoices .= " WHERE " . implode(" AND ", $conds);
 $sql_select_invoices .= " ORDER BY pi.purchase_date DESC, pi.id DESC";
 
@@ -1016,6 +1039,11 @@ $sql_total_displayed = "SELECT COALESCE(SUM(total_amount),0) AS total_displayed 
 $conds_total = [];
 $params_total = [];
 $types_total = '';
+if (!empty($search_invoice_id)) {
+  $conds[] = "pi.id = ?"; // exact match on invoice id
+  $params[] = $search_invoice_id;
+  $types .= 'i';
+} 
 if (!empty($selected_supplier_id)) {
   $conds_total[] = "pi.supplier_id = ?";
   $params_total[] = $selected_supplier_id;
@@ -1026,6 +1054,8 @@ if (!empty($selected_status)) {
   $params_total[] = $selected_status;
   $types_total .= 's';
 }
+
+
 if (!empty($conds_total)) $sql_total_displayed .= " AND " . implode(" AND ", $conds_total);
 if ($stmt_total = $conn->prepare($sql_total_displayed)) {
   if (!empty($params_total)) stmt_bind_params($stmt_total, $types_total, $params_total);
@@ -1036,6 +1066,8 @@ if ($stmt_total = $conn->prepare($sql_total_displayed)) {
   $stmt_total->close();
 }
 
+
+// apply filters in order of priority; if invoice id search is provided, it will be the strongest filter
 
 
 
@@ -1052,14 +1084,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
 <!-- BEGIN: manage_purchase_invoices.html (updated frontend) -->
 <!-- START: manage_purchase_invoices HTML+JS (استبدل الجزء الموجود عندك بهذا) -->
 <style>
-  :root {
-    --primary: #0b84ff;
-    --bg: #f6f8fc;
-    --surface: #fff;
-    --text: #0f172a;
-    --radius: 12px;
-    --shadow: 0 10px 24px rgba(2, 6, 23, 0.06);
-  }
 
   .container {
     max-width: 1200px;
@@ -1070,7 +1094,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
   .card {
     border-radius: 12px;
     box-shadow: var(--shadow);
-    background: #fff;
+    background: var(--bg);
     margin-bottom: 12px;
   }
 
@@ -1106,7 +1130,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
   }
 
   .modal .modal-content {
-    background: #fff;
+    background: var(--bg);
     border-radius: 8px;
     width: 92%;
     max-width: 1100px;
@@ -1172,7 +1196,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
   }
 
   .inv-notes pre {
-    background: #f8fafc;
+    background: var(--bg) !important;
     padding: 10px;
     border-radius: 6px;
     min-height: 40px;
@@ -1268,10 +1292,16 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <?php endforeach; ?>
           </select>
         </div>
+        <div style="min-width:220px">
+  <label>بحث برقم الفاتورة</label>
+  <input type="number" name="invoice_out_id" class="form-control" placeholder="أدخل رقم الفاتورة" value="<?php echo e($search_invoice_id); ?>">
+</div>
+
         <div style="min-width:120px">
           <button class="btn btn-primary" type="submit">تصفية</button>
         </div>
-        <?php if ($selected_supplier_id || $selected_status): ?>
+        <?php if ($selected_supplier_id || $selected_status || !empty($search_invoice_id)): ?>
+
           <div style="min-width:120px"><a href="<?php echo basename(__FILE__); ?>" class="btn btn-secondary">مسح</a></div>
         <?php endif; ?>
       </form>
@@ -1282,7 +1312,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
   <div class="card">
     <div style="padding:8px;">
       <div style="overflow:auto; " class="custom-table-wrapper">
-        <table class=" tabel custom-table customized">
+        <table class=" tabe custom-table customized">
           <thead class="table-dark center">
             <tr>
               <th>#</th>
@@ -1486,11 +1516,11 @@ require_once BASE_DIR . 'partials/sidebar.php';
           '<div>' + (inv.status === 'fully_received' ? '<span class="badge-received">مستلمة</span>' : (inv.status === 'cancelled' ? '<span class="badge-cancelled">ملغاة</span>' : '<span class="badge-pending">قيد الانتظار</span>')) + '</div></div>';
 
         html += '<div style="margin-top:10px;"><strong>المورد:</strong> ' + escapeHtml(inv.supplier_name || '') + ' &nbsp; <strong>الإجمالي:</strong> ' + Number(inv.total_amount || 0).toFixed(2) + ' ج.م</div>';
-        html += '<div style="margin-top:10px"><h4>ملاحظات</h4><pre style="white-space:pre-wrap;background:#f8fafc;padding:10px;border-radius:6px;">' + escapeHtml(inv.notes || '-') + '</pre></div>';
+        html += '<div style="margin-top:10px"><h4>ملاحظات</h4><pre style="white-space:pre-wrap;padding:10px;border-radius:6px;">' + escapeHtml(inv.notes || '-') + '</pre></div>';
 
         // items
-        html += '<div style="margin-top:10px"><h4>بنود الفاتورة</h4>';
-        html += '<table class="table"><thead><tr><th>#</th><th>اسم</th><th>كمية</th><th>سعر شراء</th><th>سعر بيع</th><th>مستلم</th><th>إجمالي</th></tr></thead><tbody>';
+        html += '<div class="custom-table-wrapper" style="margin-top:10px"><h4>بنود الفاتورة</h4>';
+        html += '<table class="custom-table"><thead class="center"><tr><th>#</th><th>اسم</th><th>كمية</th><th>سعر شراء</th><th>سعر بيع</th><th>مستلم</th><th>إجمالي</th></tr></thead><tbody>';
         let total = 0;
         if (items.length) {
           items.forEach((it, idx) => {
@@ -1504,9 +1534,9 @@ require_once BASE_DIR . 'partials/sidebar.php';
         html += '</tbody><tfoot><tr><td colspan="6" style="text-align:right;font-weight:700">الإجمالي</td><td style="text-align:right;font-weight:800">' + total.toFixed(2) + ' ج.م</td></tr></tfoot></table></div>';
 
         // batches
-        html += '<div style="margin-top:10px"><h4>الدفعات المرتبطة</h4>';
+        html += '<div class="custom-table-wrapper" style="margin-top:10px"><h4>الدفعات المرتبطة</h4>';
         if (batches && batches.length) {
-          html += '<table class="table"><thead><tr><th>دفعة</th><th>اسم</th><th>منتج</th><th>كمية</th><th>متبقي</th><th>سعر شراء</th><th>سعر بيع</th><th>الحالة</th><th>سبب الإرجاع</th><th>سبب الإلغاء</th></tr></thead><tbody>';
+          html += '<table class="custom-table"><thead class="center"><tr><th>دفعة</th><th>اسم</th><th>منتج</th><th>كمية</th><th>متبقي</th><th>سعر شراء</th><th>سعر بيع</th><th>الحالة</th><th>سبب الإرجاع</th><th>سبب الإلغاء</th></tr></thead><tbody>';
           batches.forEach((b,index) => {
             html += '<tr><td>' + escapeHtml(String(b.id)) + '</td><td>'+ escapeHtml(String(items[index]?.product_name?? '_')) + '</td><td>' + escapeHtml(String(b.product_id || '-')) + '</td><td>' + Number(b.qty || 0).toFixed(2) + '</td><td>' + Number(b.remaining || 0).toFixed(2) + '</td><td>' + (b.unit_cost !== null ? Number(b.unit_cost).toFixed(2) + ' ج.م' : '-') + '</td><td>' + (b.sale_price !== null && b.sale_price !== undefined ? Number(b.sale_price).toFixed(2) + ' ج.م' : '-') + '</td><td>' + escapeHtml(b.status || '') + '</td><td>' + escapeHtml(b.revert_reason || '-') + '</td><td>' + escapeHtml(b.cancel_reason || '-') + '</td></tr>';
           });
@@ -1571,7 +1601,8 @@ require_once BASE_DIR . 'partials/sidebar.php';
         const allowDelete = (String(inv.status).trim() === 'pending');
 
         // build editable table
-        let html = '<table class="table"><thead><tr><th>#</th><th>المنتج</th><th>كمية حالية</th><th>كمية جديدة</th><th>سعر شراء حالي</th><th>سعر شراء جديد</th><th>سعر بيع حالي</th><th>سعر بيع جديد</th>';
+        let html = '<table class="custom-table"><thead class="center">' +
+          '<tr<tr><th>#</th><th>المنتج</th><th>كمية حالية</th><th>كمية جديدة</th><th>سعر شراء حالي</th><th>سعر شراء جديد</th><th>سعر بيع حالي</th><th>سعر بيع جديد</th>';
         if (allowDelete) html += '<th>حذف</th>';
         html += '</tr></thead><tbody>';
 

@@ -989,12 +989,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // The remainder of your file (loading lists, rendering HTML/JS) can remain unchanged.
 // I keep the same logic for products_list, next_invoice_id, invoice loading, etc.
 
+// $products_list = [];
+// $sqlP = "SELECT id, product_code, name, selling_price, cost_price, current_stock, unit_of_measure FROM products ORDER BY name LIMIT 2000";
+// if ($resP = $conn->query($sqlP)) {
+//   while ($r = $resP->fetch_assoc()) $products_list[] = $r;
+//   $resP->free();
+// }
+
 $products_list = [];
 $sqlP = "SELECT id, product_code, name, selling_price, cost_price, current_stock, unit_of_measure FROM products ORDER BY name LIMIT 2000";
 if ($resP = $conn->query($sqlP)) {
   while ($r = $resP->fetch_assoc()) $products_list[] = $r;
   $resP->free();
 }
+
+// ------- الآن نجلب مجموع remaining من دفعات ACTIVE لكل منتج (استعلام واحد) -------
+$batch_remaining = []; // keyed by product_id => remaining_sum
+
+$product_ids = array_map(function($p){ return intval($p['id']); }, $products_list);
+if (!empty($product_ids)) {
+    $in = implode(',', $product_ids);
+
+    // ----------------- الافتراض: يوجد حقل `active` في جدول batches (1 = نشيط) -----------------
+    // $sqlB = "SELECT product_id, SUM(remaining) AS remaining_sum
+    //          FROM batches
+    //          WHERE active = 1 AND product_id IN ($in)
+    //          GROUP BY product_id";
+
+    // إذا كان جدولك يستخدم حقل status بدلاً من active: استخدم هذا الاستعلام بدلاً من السطر السابق
+    $sqlB = "SELECT product_id, SUM(remaining) AS remaining_sum
+             FROM batches
+             WHERE status = 'active' AND product_id IN ($in)
+             GROUP BY product_id";
+
+    if ($resB = $conn->query($sqlB)) {
+        while ($rb = $resB->fetch_assoc()) {
+            $batch_remaining[intval($rb['product_id'])] = floatval($rb['remaining_sum']);
+        }
+        $resB->free();
+    } else {
+        // فشل استعلام الدُفعات — سيتم استخدام current_stock كـ fallback
+        // error_log("Failed to fetch batch remaining: " . $conn->error);
+    }
+}
+
 
 // get last batch unit_cost per product (same technique)
 // $last_batch_costs = [];
@@ -1131,7 +1169,11 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
 <style>
   .view-purchase {
-    height: 80vh;
+    height: 70vh;
+  }
+
+  .view-purchase .custom-table-wrapper{
+    height: 40vh;
   }
 
   /* :root{ --surface:#ffffff; --muted:#6b7280; --border:#e5e7eb; --primary:#0b84ff; --card-shadow: 0 10px 24px rgba(15,23,42,0.06);} 
@@ -1343,60 +1385,62 @@ require_once BASE_DIR . 'partials/sidebar.php';
       </div>
     </div>
 
-    <div class="row g-3">
-      <!-- left: products -->
-      <div class="col-lg-4">
-        <div class="soft">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <strong>المنتجات</strong>
-            <input id="product_search" placeholder="بحث باسم أو كود..." style="padding:6px;border-radius:6px;border:1px solid var(--border); width:58%">
-          </div>
-         <div id="product_list" style="max-height:520px; overflow:auto;">
-  <?php foreach ($products_list as $p):
-    $id = intval($p['id']);
+  <div class="row g-3">
+  <!-- left: products -->
+  <div class="col-lg-4">
+    <div class="soft">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong>المنتجات</strong>
+        <input id="product_search" placeholder="بحث باسم أو كود..." style="padding:6px;border-radius:6px;border:1px solid var(--border); width:58%;color:var(--text); background:var(--bg)">
+      </div>
+     <div id="product_list" style="max-height:520px; overflow:auto;">
+<?php foreach ($products_list as $p):
+  $id = intval($p['id']);
 
-    // cost & selling values (تأكد أن $last_batch_costs و $last_batch_selling موجودتين كما في الكود السابق)
-    $has_batch_cost = isset($last_batch_costs[$id]) && $last_batch_costs[$id] !== null;
-    $has_batch_selling = isset($last_batch_selling[$id]) && $last_batch_selling[$id] !== null;
+  // cost & selling values (تأكد أن $last_batch_costs و $last_batch_selling موجودتين كما في الكود السابق)
+  $has_batch_cost = isset($last_batch_costs[$id]) && $last_batch_costs[$id] !== null;
+  $has_batch_selling = isset($last_batch_selling[$id]) && $last_batch_selling[$id] !== null;
 
-    $default_cost = $has_batch_cost ? $last_batch_costs[$id] : floatval($p['cost_price']);
-    $default_selling = $has_batch_selling ? $last_batch_selling[$id] : floatval($p['selling_price']);
+  $default_cost = $has_batch_cost ? $last_batch_costs[$id] : floatval($p['cost_price']);
+  $default_selling = $has_batch_selling ? $last_batch_selling[$id] : floatval($p['selling_price']);
 
-    // source tags
-    $cost_source = $has_batch_cost ? 'batch' : 'product';
-    $selling_source = $has_batch_selling ? 'batch' : 'product';
+  // source tags
+  $cost_source = $has_batch_cost ? 'batch' : 'product';
+  $selling_source = $has_batch_selling ? 'batch' : 'product';
 
-    $o = floatval($p['current_stock']) <= 0 ? ' out-of-stock' : '';
-  ?>
-    <div class="product-item<?php echo $o; ?>"
-         data-id="<?php echo $id; ?>"
-         data-name="<?php echo e($p['name']); ?>"
-         data-code="<?php echo e($p['product_code']); ?>"
-         data-cost="<?php echo htmlspecialchars($default_cost, ENT_QUOTES); ?>"
-         data-cost-source="<?php echo $cost_source; ?>"
-         data-selling="<?php echo htmlspecialchars($default_selling, ENT_QUOTES); ?>"
-         data-selling-source="<?php echo $selling_source; ?>"
-         data-stock="<?php echo floatval($p['current_stock']); ?>">
-      <div>
-        <div style="font-weight:700"><?php echo e($p['name']); ?></div>
-        <div class="small-muted">
-          كود: <?php echo e($p['product_code']); ?> — رصيد: <span class="stock-number"><?php echo e($p['current_stock']); ?></span>
-        </div>
-
-        <div class="small-muted" style="font-size:12px;">
-          سعر شراء (أحدث): <?php echo number_format($default_cost, 2); ?> ج.م
-          <small style="color:#666;">(من: <?php echo $cost_source === 'batch' ? 'الدفعة' : 'المخزن'; ?>)</small>
-          — سعر بيع: <?php echo number_format($default_selling, 2); ?> ج.م
-          <small style="color:#666;">(من: <?php echo $selling_source === 'batch' ? 'الدفعة' : 'المخزن'; ?>)</small>
-        </div>
+  // هنا: الرصيد يأتي من مجموع remaining في الدفعات النشطة، وإلا نستخدم current_stock كقيمة بديلة
+  $display_stock = isset($batch_remaining[$id]) ? $batch_remaining[$id] :0;
+  $o = $display_stock <= 0 ? ' out-of-stock' : '';
+?>
+  <div class="product-item<?php echo $o; ?>"
+       data-id="<?php echo $id; ?>"
+       data-name="<?php echo e($p['name']); ?>"
+       data-code="<?php echo e($p['product_code']); ?>"
+       data-cost="<?php echo htmlspecialchars($default_cost, ENT_QUOTES); ?>"
+       data-cost-source="<?php echo $cost_source; ?>"
+       data-selling="<?php echo htmlspecialchars($default_selling, ENT_QUOTES); ?>"
+       data-selling-source="<?php echo $selling_source; ?>"
+       data-stock="<?php echo $display_stock; ?>">
+    <div>
+      <div style="font-weight:700"><?php echo e($p['name']); ?></div>
+      <div class="small-muted">
+        كود: <?php echo e($p['product_code']); ?> — رصيد: <span class="stock-number"><?php echo $display_stock; ?></span>
       </div>
 
-      <div style="text-align:left">
-        <div style="font-weight:700"><?php echo number_format($default_cost, 2); ?> ج.م</div>
-        <?php if (floatval($p['current_stock']) <= 0): ?><div class="badge-out">نفذ</div><?php endif; ?>
+      <div class="small-muted" style="font-size:12px;">
+        سعر شراء (أحدث): <?php echo number_format($default_cost, 2); ?> ج.م
+        <small style="color:#666;">(من: <?php echo $cost_source === 'batch' ? 'الدفعة' : 'المخزن'; ?>)</small>
+        — سعر بيع: <?php echo number_format($default_selling, 2); ?> ج.م
+        <small style="color:#666;">(من: <?php echo $selling_source === 'batch' ? 'الدفعة' : 'المخزن'; ?>)</small>
       </div>
     </div>
-  <?php endforeach; ?>
+
+    <div style="text-align:left">
+      <div style="font-weight:700"><?php echo number_format($default_cost, 2); ?> ج.م</div>
+      <?php if ($display_stock <= 0): ?><div class="badge-out mt-1">نفذ</div><?php endif; ?>
+    </div>
+  </div>
+<?php endforeach; ?>
 </div>
 
 
@@ -1443,8 +1487,8 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <div class="small-muted">سعر الشراء يُستخدم لحساب إجمالي الفاتورة (افتراضي: آخر سعر دفعة أو السعر المرجعي).</div>
           </div>
 
-          <div class="items-wrapper">
-            <table class="table table-hover mb-0">
+          <div class="items-wrapper  custom-table-wrapper">
+            <table class="custom-table">
               <thead class="table-light">
                 <tr>
                   <th style="width:40px">#</th>
@@ -1498,7 +1542,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
             class="form-control form-control-sm item-cost text-end" 
             value="<?php echo number_format($last_cost, 2); ?>" 
             step="0.01" min="0" 
-            style="width:110px; display:inline-block"> ج.م
+            style="width:110px; display:inline-block"> 
         </td>
 
         <!-- سعر البيع -->
@@ -1507,8 +1551,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
             class="form-control form-control-sm item-selling text-end" 
             value="<?php echo number_format($last_sell, 2); ?>" 
             step="0.01" min="0" 
-            style="width:110px; display:inline-block"> ج.م
-        </td>
+            style="width:110px; display:inline-block">         </td>
 
         <!-- الإجمالي -->
         <td class="text-end fw-bold item-total">
@@ -1530,7 +1573,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
               
               <tfoot>
-                <tr class="table-light">
+                <tr class="table-light note-text">
                   <td colspan="5" class="text-end fw-bold">الإجمالي الكلي (سعر الشراء):</td>
                   <td class="text-end fw-bold" id="grand_total">0.00 ج.م</td>
                   <td></td>
@@ -1576,7 +1619,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
           <label><input type="radio" name="confirm_status" value="fully_received"> تم الاستلام (إضافة دفعات للمخزن)</label>
         </div>
       </div>
-      <div id="confirmPreviewList" style="max-height:260px; overflow:auto; border:1px solid var(--border); padding:8px; border-radius:8px; background: #fafafa;"></div>
+      <div id="confirmPreviewList" style="max-height:260px; overflow:auto; border:1px solid var(--border); padding:8px; border-radius:8px;color:var(--text); background:var(--bg)"></div>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
         <div>
           <button id="confirmCancel" class="btn btn-outline-secondary">إلغاء والعودة</button>
@@ -1721,7 +1764,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
             tr.dataset.itemId = itRow.item_id_pk;
             tr.dataset.productId = itRow.product_id;
             const idx = qa('#items_tbody tr').length;
-            tr.innerHTML = `<td>${idx}</td><td>${escapeHtml(itRow.product_name)}</td><td class="text-center"><input class="form-control form-control-sm item-qty text-center" value="${parseFloat(itRow.quantity).toFixed(2)}" step="0.01" min="0" style="width:100px;margin:auto"></td><td class="text-end"><input class="form-control form-control-sm item-cost text-end" value="${parseFloat(itRow.cost_price_per_unit).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.م</td><td class="text-end"><input class="form-control form-control-sm item-selling text-end" value="${parseFloat(p.selling).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.م</td><td class="text-end fw-bold item-total">${parseFloat(itRow.total_cost).toFixed(2)} ج.م</td><td class="text-center no-print"><button class="btn btn-sm btn-danger btn-delete-item" data-item-id="${itRow.item_id_pk}">حذف</button></td>`;
+            tr.innerHTML = `<td>${idx}</td><td>${escapeHtml(itRow.product_name)}</td><td class="text-center"><input class="form-control form-control-sm item-qty text-center" value="${parseFloat(itRow.quantity).toFixed(2)}" step="0.01" min="0" style="width:100px;margin:auto"></td><td class="text-end"><input class="form-control form-control-sm item-cost text-end" value="${parseFloat(itRow.cost_price_per_unit).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.</td><td class="text-end"><input class="form-control form-control-sm item-selling text-end" value="${parseFloat(p.selling).toFixed(2)}" step="0.01" min="0" style="width:110px;display:inline-block"> ج.م</td><td class="text-end fw-bold item-total">${parseFloat(itRow.total_cost).toFixed(2)} ج.م</td><td class="text-center no-print"><button class="btn btn-sm btn-danger btn-delete-item" data-item-id="${itRow.item_id_pk}">حذف</button></td>`;
             const noRow = q('#no-items-row');
             if (noRow) noRow.remove();
             q('#items_tbody').appendChild(tr);
@@ -1921,7 +1964,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
         rowDiv.style.display = 'flex';
         rowDiv.style.justifyContent = 'space-between';
         rowDiv.style.marginBottom = '6px';
-        rowDiv.innerHTML = `<div><strong>${escapeHtml(tr.children[1].innerText)}</strong><div class="small-muted">كمية: ${qv} — سعر شراء: ${cv.toFixed(2)} — سعر بيع: ${sv.toFixed(2)}</div></div><div>${line.toFixed(2)}</div>`;
+        rowDiv.innerHTML = `<div ><strong>${escapeHtml(tr.children[1].innerText)}</strong><div class="small-muted">كمية: ${qv} — سعر شراء: ${cv.toFixed(2)} — سعر بيع: ${sv.toFixed(2)}</div></div><div>${line.toFixed(2)}</div>`;
         previewDiv.appendChild(rowDiv);
         itemsPayload.push({
           product_id: pid,

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>عرض Sale Item Allocations — توضيح المتوسط</title>
+  <style>
+    :root{
+      --bg:#f5f7fb; --card:#fff; --text:#0f172a; --muted:#566278;
+      --accent:#0b84ff; --accent-2:#7c3aed; --radius:12px; --shadow:0 8px 20px rgba(2,6,23,0.06);
+    }
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Arial; background:var(--bg); color:var(--text); margin:0; padding:24px}
+    .wrap{max-width:1100px;margin:0 auto}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    header h1{font-size:1.1rem;margin:0}
+    .subtitle{color:var(--muted);font-size:0.95rem}
+
+    .card{background:var(--card);padding:14px;border-radius:var(--radius);box-shadow:var(--shadow);}
+    .grid{display:grid;grid-template-columns:1fr 420px;gap:16px}
+    .table-wrap{overflow:auto}
+
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead th{background:#f1f6fb;padding:10px 12px;text-align:right;border-bottom:1px solid #e6eef9;color:var(--muted)}
+    tbody td{padding:10px 12px;border-bottom:1px solid #eef3fb}
+    tfoot td{padding:10px 12px;font-weight:700}
+
+    .btn{display:inline-block;padding:6px 10px;border-radius:8px;border:1px solid rgba(2,6,23,0.06);cursor:pointer;background:#fff}
+    .btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;border:0}
+    .btn.ghost{background:transparent}
+
+    .center{text-align:center}
+    .text-end{text-align:right}
+
+    /* modal */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:999}
+    .modal{width:100%;max-width:880px;background:var(--card);border-radius:12px;padding:14px}
+    .modal h3{margin:0 0 8px}
+    .small{font-size:13px;color:var(--muted)}
+
+    /* right panel */
+    .panel .badge{display:inline-block;padding:6px 10px;border-radius:999px;background:#f1f5fb;color:var(--muted);font-weight:700}
+    .calc{margin-top:12px;padding:12px;border-radius:10px;background:#fcfdff;border:1px solid #eef6ff}
+    .muted{color:var(--muted)}
+
+    @media (max-width:960px){.grid{grid-template-columns:1fr} .panel{order:-1}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>عرض تخصيصات بيع البنود (Sale Item Allocations)</h1>
+        <div class="subtitle">اضغط على زر "تفاصيل" لأي منتج لعرض الدُفعات (الباتشات) التي خرجت منها الكمية، وأسعار الشراء لكل جزء.</div>
+      </div>
+      <div class="small muted">نموذج تجريبي — البيانات افتراضية للتوضيح</div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="badge">ج.م</div>
+            <div class="muted">قائمة المنتجات المجمّعة من جدول allocations</div>
+          </div>
+          <div>
+            <button class="btn ghost" id="refreshBtn">تحديث</button>
+            <button class="btn primary" id="addDemoBtn">أضف بيانات توضيحية</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table id="productsTable">
+            <thead>
+              <tr>
+                <th style="width:80px"># المنتج</th>
+                <th>الاسم</th>
+                <th style="width:120px" class="text-end">الكمية المباعة</th>
+                <th style="width:140px" class="text-end">إجمالي التكلفة</th>
+                <th style="width:120px" class="text-end">متوسط التكلفة/وحدة</th>
+                <th style="width:120px" class="center">الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" class="text-end">الإجمالي المبسّط:</td>
+                <td id="footerQty" class="text-end">0.00</td>
+                <td id="footerCost" class="text-end">0.00</td>
+                <td></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel card">
+        <h4>شرح سريع للطريقة</h4>
+        <div class="muted">نحسب المتوسط الوزني (Weighted Average) عبر تجميع جميع التخصيصات لكل منتج:</div>
+        <div class="calc">
+          <div class="small muted">المعادلة:</div>
+          <div style="font-weight:800;margin-top:6px">متوسط التكلفة = (Σ (كمية من الدُفعة × سعر شراء الوحدة)) ÷ (Σ كمية)</div>
+          <div id="calcExample" class="small" style="margin-top:8px;color:var(--muted)">اختر منتجًا لعرض مثال مفصل.</div>
+        </div>
+
+        <div style="margin-top:14px">
+          <div class="small muted">حالة البيانات</div>
+          <ul style="padding-left:18px;margin-top:6px;color:var(--muted)">
+            <li>كل تخصيص يظهر الدُفعة (batch) والكمية وسعر الشراء لكل وحدة.</li>
+            <li>إذا لم توجد تخصيصات كاملة لخط بيع، ستظهر رسالة تحذير.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- modal -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 id="modalTitle">تفاصيل التخصيص</h3>
+        <div>
+          <button class="btn ghost" id="closeModalBtn">✖ إغلاق</button>
+        </div>
+      </div>
+      <div id="modalBody">
+        <div class="small muted" id="modalInfo">جارٍ التحميل...</div>
+        <div style="margin-top:12px;overflow:auto">
+          <table id="allocTable">
+            <thead>
+              <tr>
+                <th>باتش / دفعة</th>
+                <th style="width:100px">تاريخ الاستلام</th>
+                <th style="width:110px" class="text-end">الكمية</th>
+                <th style="width:120px" class="text-end">سعر الشراء</th>
+                <th style="width:140px" class="text-end">إجمالي تكلفة</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" class="text-end">المجموع</td>
+                <td id="allocTotalQty" class="text-end">0.00</td>
+                <td></td>
+                <td id="allocTotalCost" class="text-end">0.00</td>
+              </tr>
+              <tr>
+                <td colspan="4" class="text-end">متوسط التكلفة لكل وحدة</td>
+                <td id="allocAvg" class="text-end">0.00</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div style="margin-top:12px;" id="calcSteps"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- بيانات توضيحية (سيستبدلها في تطبيقك من قاعدة البيانات) ---
+    let allocations = [
+      // sale_item_allocations rows
+      // sale_item_id, product_id, product_name, batch_id, qty, unit_cost, line_cost, received_at
+      {sale_item_id:1, product_id:101, product_name:'منتج أ', batch_id:'B-2025-001', qty:5, unit_cost:20.00, line_cost:100.00, received_at:'2025-01-05'},
+      {sale_item_id:2, product_id:101, product_name:'منتج أ', batch_id:'B-2025-002', qty:2, unit_cost:30.00, line_cost:60.00, received_at:'2025-02-01'},
+      {sale_item_id:3, product_id:102, product_name:'منتج ب', batch_id:'B-2025-003', qty:3, unit_cost:15.00, line_cost:45.00, received_at:'2025-01-11'},
+      {sale_item_id:4, product_id:101, product_name:'منتج أ', batch_id:'B-2025-004', qty:4, unit_cost:25.00, line_cost:100.00, received_at:'2025-03-03'},
+      {sale_item_id:5, product_id:103, product_name:'منتج ج', batch_id:'B-2025-005', qty:10, unit_cost:8.00, line_cost:80.00, received_at:'2025-02-20'},
+    ];
+
+    // Utils
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => Array.from(document.querySelectorAll(s));
+    const fmt = (v) => Number(v || 0).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+    // تجميع التخصيصات حسب المنتج
+    function groupByProduct(data){
+      const map = new Map();
+      data.forEach(a => {
+        const key = a.product_id;
+        if (!map.has(key)) map.set(key, {product_id:a.product_id, product_name:a.product_name, allocations:[]});
+        map.get(key).allocations.push(Object.assign({}, a));
+      });
+      return Array.from(map.values());
+    }
+
+    function computeProductSummary(product){
+      const totQty = product.allocations.reduce((s,x)=> s + Number(x.qty || 0), 0);
+      const totCost = product.allocations.reduce((s,x)=> s + Number(x.line_cost || (x.qty * x.unit_cost) || 0), 0);
+      const avg = totQty ? (totCost / totQty) : 0;
+      return {totalQty:totQty, totalCost:totCost, avgUnitCost:avg};
+    }
+
+    function renderProductsTable(){
+      const tbody = $('#productsTable tbody'); tbody.innerHTML = '';
+      const grouped = groupByProduct(allocations);
+      let grandQty = 0, grandCost = 0;
+      grouped.forEach(prod => {
+        const s = computeProductSummary(prod);
+        grandQty += s.totalQty; grandCost += s.totalCost;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>#${prod.product_id}</strong></td>
+          <td>${escapeHtml(prod.product_name)}</td>
+          <td class="text-end">${fmt(s.totalQty)}</td>
+          <td class="text-end">${fmt(s.totalCost)}</td>
+          <td class="text-end">${fmt(s.avgUnitCost)}</td>
+          <td class="center"><button class="btn" data-product-id="${prod.product_id}">تفاصيل</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+      $('#footerQty').textContent = fmt(grandQty);
+      $('#footerCost').textContent = fmt(grandCost);
+
+      // bind details button
+      $$('#productsTable tbody button').forEach(btn => btn.addEventListener('click', ()=>{
+        const id = Number(btn.dataset.productId); openModalForProduct(id);
+      }));
+    }
+
+    // Modal
+    function openModalForProduct(productId){
+      const grouped = groupByProduct(allocations);
+      const product = grouped.find(p=>p.product_id === productId);
+      if (!product) return alert('لا توجد تخصيصات لهذا المنتج.');
+      const summary = computeProductSummary(product);
+
+      $('#modalTitle').textContent = `تفاصيل تخصيصات: ${product.product_name} (#${product.product_id})`;
+      $('#modalInfo').textContent = `إجمالي كمية: ${fmt(summary.totalQty)} — إجمالي تكلفة: ${fmt(summary.totalCost)}`;
+
+      const tbody = $('#allocTable tbody'); tbody.innerHTML = '';
+      product.allocations.sort((a,b)=> new Date(a.received_at) - new Date(b.received_at));
+      let steps = [];
+      product.allocations.forEach(a=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${escapeHtml(a.batch_id)}</td>
+          <td>${escapeHtml(a.received_at)}</td>
+          <td class="text-end">${fmt(a.qty)}</td>
+          <td class="text-end">${fmt(a.unit_cost)}</td>
+          <td class="text-end">${fmt(a.line_cost)}</td>
+        `;
+        tbody.appendChild(tr);
+        steps.push(`${fmt(a.qty)} × ${fmt(a.unit_cost)} = ${fmt(a.line_cost)}`);
+      });
+
+      $('#allocTotalQty').textContent = fmt(summary.totalQty);
+      $('#allocTotalCost').textContent = fmt(summary.totalCost);
+      $('#allocAvg').textContent = fmt(summary.avgUnitCost);
+
+      // show steps
+      const calcSteps = $('#calcSteps');
+      calcSteps.innerHTML = '<div class="small muted">تفصيل طريقة الحساب (خطوة بخطوة):</div>';
+      const ol = document.createElement('ol');
+      ol.style.paddingLeft = '18px';
+      steps.forEach(s=>{ const li = document.createElement('li'); li.textContent = s; ol.appendChild(li); });
+      const avgLine = document.createElement('div'); avgLine.style.marginTop='8px'; avgLine.style.fontWeight='800';
+      avgLine.textContent = `المتوسط = (Σ الأجزاء) ÷ Σ الكميات = (${product.allocations.map(a=>a.line_cost).map(Number).reduce((x,y)=>x+y,0).toFixed(2)}) ÷ ${summary.totalQty.toFixed(2)} = ${summary.avgUnitCost.toFixed(2)}`;
+      calcSteps.appendChild(ol); calcSteps.appendChild(avgLine);
+
+      $('#modalBackdrop').style.display = 'flex';
+    }
+
+    function closeModal(){ $('#modalBackdrop').style.display = 'none'; $('#calcSteps').innerHTML = ''; }
+
+    function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; }); }
+
+    // demo: add more demo allocations
+    $('#addDemoBtn').addEventListener('click', ()=>{
+      allocations.push({sale_item_id:6, product_id:102, product_name:'منتج ب', batch_id:'B-2025-006', qty:1, unit_cost:18.00, line_cost:18.00, received_at:'2025-03-10'});
+      allocations.push({sale_item_id:7, product_id:101, product_name:'منتج أ', batch_id:'B-2025-007', qty:6, unit_cost:22.50, line_cost:135.00, received_at:'2025-04-02'});
+      renderProductsTable();
+    });
+
+    $('#refreshBtn').addEventListener('click', ()=>renderProductsTable());
+    $('#closeModalBtn').addEventListener('click', closeModal);
+    $('#modalBackdrop').addEventListener('click', (e)=>{ if (e.target === $('#modalBackdrop')) closeModal(); });
+
+    // initial render
+    renderProductsTable();
+  </script>
+</body>
+</html>

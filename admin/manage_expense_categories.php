@@ -57,8 +57,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_category'])) {
             }
         }
 
+        // إذا هذا حفظ تعديل، نتحقق أيضاً إن الفئة المستخدمة لا يمكن تعديلها
+        if (empty($category_name_err) && empty($message) && $edit_id) {
+            $sql_check_used = "SELECT COUNT(*) AS cnt FROM expenses WHERE category_id = ?";
+            if ($stmt_used = $conn->prepare($sql_check_used)) {
+                $stmt_used->bind_param("i", $edit_id);
+                $stmt_used->execute();
+                $res_used = $stmt_used->get_result();
+                $row_used = $res_used->fetch_assoc();
+                $used_count = intval($row_used['cnt'] ?? 0);
+                $stmt_used->close();
+                if ($used_count > 0) {
+                    // منع التعديل لأن الفئة مستخدمة
+                    $_SESSION['message'] = "<div class='alert alert-warning'>لا يمكن تعديل هذه الفئة لأنها مستخدمة في {$used_count} مصروف(ات).</div>";
+                    header("Location: manage_expense_categories.php");
+                    exit;
+                }
+            } else {
+                $_SESSION['message'] = "<div class='alert alert-danger'>خطأ أثناء التحقق من اعتماد الفئة.</div>";
+                header("Location: manage_expense_categories.php");
+                exit;
+            }
+        }
+
         if (empty($category_name_err) && empty($message)) {
-            if ($edit_id) { // وضع التعديل
+            if ($edit_id) { // وضع التعديل (سيصل هنا فقط لو الفئة غير مستخدمة)
                 $sql_save = "UPDATE expense_categories SET name = ?, description = ? WHERE id = ?";
                 if ($stmt_save = $conn->prepare($sql_save)) {
                     $stmt_save->bind_param("ssi", $category_name, $category_description, $edit_id);
@@ -72,7 +95,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_category'])) {
                     $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام التحديث.</div>";
                 }
             } else { // وضع الإضافة
-                $sql_save = "INSERT INTO expense_categories (name, description) VALUES (?, ?)";
+                $sql_save = "INSERT INTO expense_categories (name, description, created_at) VALUES (?, ?, NOW())";
                 if ($stmt_save = $conn->prepare($sql_save)) {
                     $stmt_save->bind_param("ss", $category_name, $category_description);
                     if ($stmt_save->execute()) {
@@ -97,22 +120,42 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_category'])) {
 }
 
 // --- معالجة الحذف ---
+// الآن نمنع الحذف إن كانت الفئة مرتبطة بمصاريف
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_category'])) {
     if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
         $_SESSION['message'] = "<div class='alert alert-danger'>خطأ: طلب غير صالح (CSRF).</div>";
     } else {
         $category_id_to_delete = intval($_POST['category_id_to_delete']);
-        $sql_delete = "DELETE FROM expense_categories WHERE id = ?";
-        if ($stmt_delete = $conn->prepare($sql_delete)) {
-            $stmt_delete->bind_param("i", $category_id_to_delete);
-            if ($stmt_delete->execute()) {
-                $_SESSION['message'] = ($stmt_delete->affected_rows > 0) ? "<div class='alert alert-success'>تم حذف الفئة بنجاح. المصاريف المرتبطة أصبحت بدون فئة.</div>" : "<div class='alert alert-warning'>لم يتم العثور على الفئة أو لم يتم حذفها.</div>";
+        // تحقق من وجود مصروفات مرتبطة
+        $sql_check_used = "SELECT COUNT(*) AS cnt FROM expenses WHERE category_id = ?";
+        if ($stmt_chk = $conn->prepare($sql_check_used)) {
+            $stmt_chk->bind_param("i", $category_id_to_delete);
+            $stmt_chk->execute();
+            $res_chk = $stmt_chk->get_result();
+            $row_chk = $res_chk->fetch_assoc();
+            $count = intval($row_chk['cnt'] ?? 0);
+            $stmt_chk->close();
+
+            if ($count > 0) {
+                // منع الحذف
+                $_SESSION['message'] = "<div class='alert alert-warning'>لا يمكن حذف هذه الفئة لأنها مستخدمة في {$count} مصروف(ات).</div>";
             } else {
-                $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف الفئة.</div>";
+                // مسموح بالحذف
+                $sql_delete = "DELETE FROM expense_categories WHERE id = ?";
+                if ($stmt_delete = $conn->prepare($sql_delete)) {
+                    $stmt_delete->bind_param("i", $category_id_to_delete);
+                    if ($stmt_delete->execute()) {
+                        $_SESSION['message'] = ($stmt_delete->affected_rows > 0) ? "<div class='alert alert-success'>تم حذف الفئة بنجاح.</div>" : "<div class='alert alert-warning'>لم يتم العثور على الفئة أو لم يتم حذفها.</div>";
+                    } else {
+                        $_SESSION['message'] = "<div class='alert alert-danger'>حدث خطأ أثناء حذف الفئة.</div>";
+                    }
+                    $stmt_delete->close();
+                } else {
+                    $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف.</div>";
+                }
             }
-            $stmt_delete->close();
         } else {
-            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في تحضير استعلام الحذف.</div>";
+            $_SESSION['message'] = "<div class='alert alert-danger'>خطأ أثناء التحقق من الاعتمادية.</div>";
         }
     }
     header("Location: manage_expense_categories.php"); // PRG
@@ -120,27 +163,53 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_category'])) {
 }
 
 // --- جلب بيانات فئة للتعديل (إذا تم طلب ذلك عبر GET) ---
+// لكن إذا الفئة مستخدمة نمنع دخول وضع التعديل ونظهر رسالة
 if (isset($_GET['edit_id']) && is_numeric($_GET['edit_id'])) {
-    $edit_mode = true;
-    $category_id_to_edit = intval($_GET['edit_id']);
-    $sql_get_category = "SELECT name, description FROM expense_categories WHERE id = ?";
-    if ($stmt_get = $conn->prepare($sql_get_category)) {
-        $stmt_get->bind_param("i", $category_id_to_edit);
-        $stmt_get->execute();
-        $result_get = $stmt_get->get_result();
-        if ($row_get = $result_get->fetch_assoc()) {
-            $category_name = $row_get['name'];
-            $category_description = $row_get['description'];
+    $requested_edit_id = intval($_GET['edit_id']);
+    // تحقق أولاً إن الفئة مستخدمة
+    $sql_check_used = "SELECT COUNT(*) AS cnt FROM expenses WHERE category_id = ?";
+    if ($stmt_chk = $conn->prepare($sql_check_used)) {
+        $stmt_chk->bind_param("i", $requested_edit_id);
+        $stmt_chk->execute();
+        $res_chk = $stmt_chk->get_result();
+        $row_chk = $res_chk->fetch_assoc();
+        $count_for_edit = intval($row_chk['cnt'] ?? 0);
+        $stmt_chk->close();
+
+        if ($count_for_edit > 0) {
+            // منع التعديل واظهار رسالة
+            $_SESSION['message'] = "<div class='alert alert-warning'>لا يمكن تعديل هذه الفئة لأنها مستخدمة في {$count_for_edit} مصروف(ات).</div>";
+            // لا نفعّل وضع التعديل
+            header("Location: manage_expense_categories.php");
+            exit;
         } else {
-            $message = "<div class='alert alert-warning'>الفئة المطلوبة للتعديل غير موجودة.</div>";
-            $edit_mode = false;
-            $category_id_to_edit = null;
+            // آمن للتحميل في وضع التعديل
+            $sql_get_category = "SELECT name, description FROM expense_categories WHERE id = ?";
+            if ($stmt_get = $conn->prepare($sql_get_category)) {
+                $stmt_get->bind_param("i", $requested_edit_id);
+                $stmt_get->execute();
+                $result_get = $stmt_get->get_result();
+                if ($row_get = $result_get->fetch_assoc()) {
+                    $edit_mode = true;
+                    $category_id_to_edit = $requested_edit_id;
+                    $category_name = $row_get['name'];
+                    $category_description = $row_get['description'];
+                } else {
+                    $_SESSION['message'] = "<div class='alert alert-warning'>الفئة المطلوبة للتعديل غير موجودة.</div>";
+                    header("Location: manage_expense_categories.php");
+                    exit;
+                }
+                $stmt_get->close();
+            } else {
+                $_SESSION['message'] = "<div class='alert alert-danger'>خطأ في جلب بيانات الفئة للتعديل.</div>";
+                header("Location: manage_expense_categories.php");
+                exit;
+            }
         }
-        $stmt_get->close();
     } else {
-         $message = "<div class='alert alert-danger'>خطأ في جلب بيانات الفئة للتعديل.</div>";
-         $edit_mode = false;
-         $category_id_to_edit = null;
+        $_SESSION['message'] = "<div class='alert alert-danger'>خطأ أثناء التحقق من اعتماد الفئة.</div>";
+        header("Location: manage_expense_categories.php");
+        exit;
     }
 }
 
@@ -159,6 +228,23 @@ if ($result_select_categories) {
     }
 } else {
     $message .= "<div class='alert alert-danger'>خطأ في جلب قائمة الفئات.</div>";
+}
+
+// جلب عدد المصروفات لكل فئة دفعة واحدة لتمييز المحمية
+$protected_counts = []; // [category_id => count]
+if (!empty($categories_list)) {
+    $ids = array_map(function($c){ return intval($c['id']); }, $categories_list);
+    // تأكد من عدم وجود مصفوفة فارغة
+    $ids_csv = implode(',', $ids);
+    if ($ids_csv !== '') {
+        $sqlp = "SELECT category_id, COUNT(*) AS cnt FROM expenses WHERE category_id IN ($ids_csv) GROUP BY category_id";
+        $resp = $conn->query($sqlp);
+        if ($resp) {
+            while ($rp = $resp->fetch_assoc()) {
+                $protected_counts[intval($rp['category_id'])] = intval($rp['cnt']);
+            }
+        }
+    }
 }
 
 require_once BASE_DIR . 'partials/header.php';
@@ -196,7 +282,7 @@ $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
             <div class="col-lg-3">
                 <div class="card shadow-sm">
                     <div class="card-header <?php echo $edit_mode ? 'bg-warning text-dark' : 'bg-success text-white'; ?>">
-                        <h5><i class="fas <?php echo $edit_mode ? 'fa-edit' : 'fa-plus-circle'; ?>"></i> <?php echo $edit_mode ? 'تعديل الفئة' : 'إضافة فئة مصروفات جديدة'; ?></h5>
+                        <h5 class="note-text"><i class="fas <?php echo $edit_mode ? 'fa-edit' : 'fa-plus-circle'; ?>"></i> <?php echo $edit_mode ? 'تعديل الفئة' : 'إضافة فئة مصروفات جديدة'; ?></h5>
                     </div>
                     <div class="card-body form-small">
                         <form action="<?php echo $current_page_url_for_forms . ($edit_mode ? '?edit_id=' . $category_id_to_edit : ''); ?>" method="post">
@@ -233,45 +319,68 @@ $current_page_url_for_forms = htmlspecialchars($_SERVER["PHP_SELF"]);
                         قائمة الفئات المسجلة
                     </div>
                     <!-- <div class="card-body"> -->
-                        <div class="table-responsive custom-table-wrapper">
-                            <table class="custom-table ">
-                                <thead class="table-dark center">
+                        <div class="table-responsiv custom-table-wrapper">
+                            <table class="custom-table table table-striped mb-0">
+                                <thead class="table-drk center">
                                     <tr>
                                         <th style="width:60px">#</th>
                                         <th>اسم الفئة</th>
                                         <th>الوصف</th>
                                         <th style="width:140px">تاريخ الإضافة</th>
+                                        <th style="width:140px">مستخدمة في</th>
                                         <th style="width:120px" class="text-center">إجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (!empty($categories_list)): ?>
                                         <?php $cat_counter = 1; ?>
-                                        <?php foreach($categories_list as $category_item): ?>
+                                        <?php foreach($categories_list as $category_item): 
+                                            $cid = intval($category_item["id"]);
+                                            $used_cnt = $protected_counts[$cid] ?? 0;
+                                            $is_protected = ($used_cnt > 0);
+                                        ?>
                                             <tr>
                                                 <td><?php echo $cat_counter++; ?></td>
                                                 <td><?php echo htmlspecialchars($category_item["name"]); ?></td>
                                                 <td><?php echo !empty($category_item["description"]) ? nl2br(htmlspecialchars($category_item["description"])) : '-'; ?></td>
                                                 <td><?php echo date('Y-m-d', strtotime($category_item["created_at"])); ?></td>
+                                                <td>
+                                                    <?php if ($is_protected): ?>
+                                                        <span class="badge bg-danger"><?php echo $used_cnt; ?> مصروف</span>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">غير مستخدمة</span>
+                                                    <?php endif; ?>
+                                                </td>
                                                 <td class="text-center">
-                                                    <a href="<?php echo $current_page_url_for_forms; ?>?edit_id=<?php echo $category_item["id"]; ?>" class="btn btn-warning btn-sm" title="تعديل الفئة">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                    <form action="<?php echo $current_page_url_for_forms; ?>" method="post" class="d-inline ms-1">
-                                                        <input type="hidden" name="category_id_to_delete" value="<?php echo $category_item["id"]; ?>">
-                                                        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                        <button type="submit" name="delete_category" class="btn btn-danger btn-sm"
-                                                                onclick="return confirm('هل أنت متأكد من حذف هذه الفئة؟ المصاريف المرتبطة بها ستصبح بدون فئة.');"
-                                                                title="حذف الفئة">
-                                                            <i class="fas fa-trash-alt"></i>
+                                                    <?php if ($is_protected): ?>
+                                                        <button class="btn btn-secondary btn-sm me-1" disabled title="لا يمكن التعديل — هذه الفئة مستخدمة في سجلات المصروفات">
+                                                            <i class="fas fa-edit"></i> تعديل
                                                         </button>
-                                                    </form>
+                                                    <?php else: ?>
+                                                        <a href="<?php echo $current_page_url_for_forms; ?>?edit_id=<?php echo $category_item["id"]; ?>" class="btn btn-warning btn-sm me-1" title="تعديل الفئة">
+                                                            <i class="fas fa-edit"></i> تعديل
+                                                        </a>
+                                                    <?php endif; ?>
+
+                                                    <?php if ($is_protected): ?>
+                                                        <button class="btn btn-secondary btn-sm" disabled title="لا يمكن الحذف — هذه الفئة مستخدمة في سجلات المصروفات">
+                                                            <i class="fas fa-trash-alt"></i> حذف
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <form action="<?php echo $current_page_url_for_forms; ?>" method="post" class="d-inline ms-1" onsubmit="return confirm('هل أنت متأكد من حذف هذه الفئة؟');">
+                                                            <input type="hidden" name="category_id_to_delete" value="<?php echo $category_item["id"]; ?>">
+                                                            <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                                                            <button type="submit" name="delete_category" class="btn btn-danger btn-sm" title="حذف الفئة">
+                                                                <i class="fas fa-trash-alt"></i> حذف
+                                                            </button>
+                                                        </form>
+                                                    <?php endif; ?>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="5" class="text-center">لا توجد فئات مصاريف مسجلة حالياً. قم بإضافة فئة جديدة.</td>
+                                            <td colspan="6" class="text-center">لا توجد فئات مصاريف مسجلة حالياً. قم بإضافة فئة جديدة.</td>
                                         </tr>
                                     <?php endif; ?>
                                 </tbody>

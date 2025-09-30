@@ -42,6 +42,8 @@
   --grad-1: linear-gradient(135deg, #0b84ff, #7c3aed);
   --grad-2: linear-gradient(135deg, #10b981, #0ea5e9);
   --grad-3: linear-gradient(135deg, #f59e0b, #ef4444);
+  --grad-4: linear-gradient(135deg, #ef4444, #b91c1c);
+  
 }
 
 /* Dark Mode Tokens */

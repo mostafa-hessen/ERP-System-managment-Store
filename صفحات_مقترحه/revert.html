@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>تصور واجهة المرتجعات — Returns UI (Mock)</title>
+  <style>
+    :root{
+      --bg:#f4f7fb; --surface:#ffffff; --muted:#6b7280; --text:#0b1220;
+      --primary:#0b84ff; --accent:#7c3aed; --success:#10b981; --danger:#ef4444;
+      --card-shadow: 0 8px 24px rgba(2,6,23,0.06);
+      --radius:10px;
+      font-family: "Noto Naskh Arabic", Tahoma, Arial, sans-serif;
+    }
+    [data-theme="dark"]{
+      --bg:#0b1220; --surface:#0f1626; --muted:#94a3b8; --text:#e6eef8;
+      --card-shadow: 0 8px 24px rgba(2,6,23,0.2);
+    }
+
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+    .wrap{padding:18px;display:flex;flex-direction:column;gap:12px;height:100vh;box-sizing:border-box}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .brand .logo{width:48px;height:48px;border-radius:10px;background:linear-gradient(90deg,var(--primary),var(--accent));color:white;display:flex;align-items:center;justify-content:center;font-weight:900}
+    .controls{display:flex;gap:8px;align-items:center}
+    .btn{padding:8px 12px;border-radius:8px;border:0;cursor:pointer;font-weight:700}
+    .btn.ghost{background:transparent;border:1px solid rgba(0,0,0,0.06)}
+    .btn.primary{background:linear-gradient(90deg,var(--primary),var(--accent));color:#fff}
+    .btn.warn{background:linear-gradient(90deg,#f59e0b,#f97316);color:#fff}
+    .grid{display:grid;grid-template-columns:320px 1fr 320px;gap:14px;flex:1;align-items:stretch}
+    .card{background:var(--surface);border-radius:var(--radius);padding:12px;box-shadow:var(--card-shadow);overflow:auto}
+    .card h3{margin:0 0 8px 0;font-size:16px}
+    input[type="text"], input[type="number"], select, textarea{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);box-sizing:border-box}
+    .invoice-row{display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.04);margin-bottom:8px;cursor:pointer}
+    .invoice-row.active{background:linear-gradient(90deg, rgba(11,132,255,0.06), rgba(124,58,237,0.03));border-color:rgba(11,132,255,0.18)}
+    .small{font-size:13px;color:var(--muted)}
+    .prod-line{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border-bottom:1px dashed rgba(0,0,0,0.03)}
+    .prod-left{text-align:right}
+    table {width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid rgba(0,0,0,0.06);text-align:center}
+    th{background:transparent;color:var(--muted);font-weight:800;position:sticky;top:0}
+    .badge{padding:6px 10px;border-radius:999px;font-weight:800}
+    .badge.warn{background:rgba(250,204,21,0.12);color:#7a4f00}
+    .badge.green{background:rgba(16,185,129,0.12);color:var(--success)}
+    .monos{font-family:monospace}
+    /* modals */
+    .backdrop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);z-index:9999;padding:16px}
+    .modal{width:100%;max-width:920px;background:var(--surface);padding:14px;border-radius:10px;box-shadow:var(--card-shadow);max-height:90vh;overflow:auto}
+    .toast-wrap{position:fixed;top:16px;left:16px;z-index:10000;display:flex;flex-direction:column;gap:8px}
+    .toast{padding:10px 14px;border-radius:8px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.12)}
+    .toast.success{background:linear-gradient(90deg,#10b981,#06b6d4)}
+    .toast.error{background:linear-gradient(90deg,#ef4444,#f97316)}
+    /* responsive */
+    @media (max-width:1100px){ .grid{grid-template-columns:1fr; height:auto} .card{max-height:none} }
+  </style>
+</head>
+<body data-theme="light">
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">RTN</div>
+        <div>
+          <div style="font-weight:900">صفحة المرتجعات (تصور)</div>
+          <div class="small">مشاهدة كيفية عودة الكميات إلى الدُفعات (FIFO / LIFO نموذج)</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="themeBtn" class="btn ghost">ظاهر/داكن</button>
+        <button id="printBtn" class="btn ghost">طباعة</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- invoices -->
+      <aside class="card" aria-label="Invoices list">
+        <h3>الفواتير</h3>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input id="invSearch" type="text" placeholder="بحث برقم أو اسم العميل..." />
+          <button id="invSearchBtn" class="btn ghost">بحث</button>
+        </div>
+        <div id="invoicesWrap" class="small"></div>
+      </aside>
+
+      <!-- items -->
+      <main class="card" aria-label="Invoice items">
+        <h3>تفاصيل الفاتورة — البنود</h3>
+        <div id="invoiceMeta" class="small" style="margin-bottom:8px">اختر فاتورة من اليسار</div>
+
+        <div id="itemsArea">
+          <!-- table will be injected -->
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+          <div>
+            <button id="previewBtn" class="btn ghost">معاينة المرتجع</button>
+            <button id="processBtn" class="btn primary">معالجة المرتجعات</button>
+          </div>
+          <div style="text-align:left">
+            <div class="small">إجمالي المرتجعات المختارة: <strong id="totalReturnQty">0</strong></div>
+            <div class="small">قيمة مرتجعة تقديرية: <strong id="totalReturnValue">0.00</strong> ج</div>
+          </div>
+        </div>
+      </main>
+
+      <!-- customer & log -->
+      <aside class="card" aria-label="Customer & log">
+        <h3>العميل</h3>
+        <div id="custBox" class="small">لم يتم اختيار فاتورة</div>
+        <hr />
+        <h3>سجل الأحداث</h3>
+        <div id="logArea" class="small" style="max-height:50vh;overflow:auto"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- FIFO modal -->
+  <div id="fifoModal" class="backdrop">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <h3 id="fifoTitle">تفاصيل FIFO</h3>
+          <div class="small" id="fifoSubtitle"></div>
+        </div>
+        <div><button id="closeFifo" class="btn ghost">إغلاق</button></div>
+      </div>
+      <div id="fifoContent" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Confirm modal -->
+  <div id="confirmModal" class="backdrop">
+    <div class="modal">
+      <h3>تأكيد معالجة المرتجعات</h3>
+      <div id="confirmBody" class="small" style="margin-top:8px"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <div>
+          <button id="cancelConfirm" class="btn ghost">إلغاء</button>
+          <button id="doConfirm" class="btn primary">تأكيد وإرسال</button>
+        </div>
+        <div><strong>إجمالي مرتجع:</strong> <span id="confirmTotal">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/*
+  Mock interactive UI for returns.
+  - Stores sample invoices, items, allocations and batches in local objects.
+  - Supports:
+    * Selecting invoice
+    * Enter return qty per item and choose restock yes/no
+    * Open FIFO preview (shows how returned qty will map to allocations & how batch.remaining changes)
+    * "Process" simulates applying return (updates allocations & batches locally), displays confirmation & toast
+*/
+
+document.addEventListener('DOMContentLoaded', ()=> {
+  // ---------- sample data ----------
+  // batches: id, product_id, remaining, unit_cost, received_at, status
+  let batches = [
+    {id:101, product_id:1, remaining:2.0, unit_cost:50, received_at:'2025-09-10', status:'active'},
+    {id:102, product_id:1, remaining:5.0, unit_cost:55, received_at:'2025-09-20', status:'active'},
+    {id:201, product_id:2, remaining:3.0, unit_cost:120, received_at:'2025-09-11', status:'active'},
+    {id:202, product_id:2, remaining:0.0, unit_cost:121, received_at:'2025-09-24', status:'consumed'}
+  ];
+
+  // sale_item_allocations: id, sale_item_id, batch_id, qty, unit_cost
+  let allocations = [
+    {id:1, sale_item_id:11, batch_id:101, qty:2.0, unit_cost:50},
+    {id:2, sale_item_id:11, batch_id:102, qty:3.0, unit_cost:55},
+    {id:3, sale_item_id:12, batch_id:201, qty:1.0, unit_cost:120},
+    {id:4, sale_item_id:12, batch_id:202, qty:2.0, unit_cost:121}
+  ];
+
+  // invoices: id, invoice_no, customer
+  let invoices = [
+    {id:1001, invoice_no:'INV-1001', customer:{name:'العربي',mobile:'01157787321',city:'Fayoum',address:'Sheikh Yusuf ST'}},
+    {id:1002, invoice_no:'INV-1002', customer:{name:'احمد',mobile:'01115473776',city:'مدابغ',address:'بيت ريان'}}
+  ];
+
+  // invoice items: sale_item_id, invoice_id, product_id, product_name, qty, selling_price
+  let invoiceItems = [
+    {id:11, invoice_id:1001, product_id:1, product_name:'لبس', qty:5, selling_price:200},
+    {id:12, invoice_id:1001, product_id:2, product_name:'كيبورد', qty:3, selling_price:250},
+    {id:21, invoice_id:1002, product_id:1, product_name:'لبس', qty:2, selling_price:210}
+  ];
+
+  // in-memory state
+  let selectedInvoiceId = null;
+  const invoicesWrap = document.getElementById('invoicesWrap');
+  const invSearch = document.getElementById('invSearch');
+  const invSearchBtn = document.getElementById('invSearchBtn');
+  const itemsArea = document.getElementById('itemsArea');
+  const custBox = document.getElementById('custBox');
+  const logArea = document.getElementById('logArea');
+  const fifoModal = document.getElementById('fifoModal');
+  const fifoContent = document.getElementById('fifoContent');
+  const fifoTitle = document.getElementById('fifoTitle');
+  const fifoSubtitle = document.getElementById('fifoSubtitle');
+  const totalReturnQtyEl = document.getElementById('totalReturnQty');
+  const totalReturnValueEl = document.getElementById('totalReturnValue');
+  const confirmModal = document.getElementById('confirmModal');
+  const confirmBody = document.getElementById('confirmBody');
+  const confirmTotal = document.getElementById('confirmTotal');
+
+  function toast(msg, type='success'){
+    const wrap = document.getElementById('toastWrap');
+    const el = document.createElement('div');
+    el.className = 'toast ' + (type==='error' ? 'error' : 'success');
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(()=> el.style.opacity = 0, 2500);
+    setTimeout(()=> el.remove(), 3000);
+  }
+
+  // render invoices list
+  function renderInvoices(filter=''){
+    invoicesWrap.innerHTML = '';
+    const list = invoices.filter(inv => {
+      if (!filter) return true;
+      const q = filter.toLowerCase();
+      return inv.invoice_no.toLowerCase().includes(q) || inv.customer.name.toLowerCase().includes(q);
+    });
+    if (!list.length) invoicesWrap.innerHTML = '<div class="small">لا توجد فواتير</div>';
+    list.forEach(inv=>{
+      const d = document.createElement('div');
+      d.className = 'invoice-row' + (selectedInvoiceId===inv.id ? ' active' : '');
+      d.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="text-align:right"><div style="font-weight:800">${inv.invoice_no}</div><div class="small">${inv.customer.name}</div></div>
+        <div class="small monos">${new Date().toLocaleDateString()}</div>
+      </div>`;
+      d.addEventListener('click', ()=> {
+        selectedInvoiceId = inv.id;
+        renderInvoices(invSearch.value.trim());
+        loadInvoice(inv.id);
+      });
+      invoicesWrap.appendChild(d);
+    });
+  }
+
+  invSearchBtn.addEventListener('click', ()=> renderInvoices(invSearch.value.trim()));
+
+  // load selected invoice items
+  function loadInvoice(invId){
+    const inv = invoices.find(i=> i.id===invId);
+    if(!inv) return;
+    const items = invoiceItems.filter(it => it.invoice_id === invId);
+    custBox.innerHTML = `<div style="font-weight:800">${inv.customer.name}</div>
+      <div class="small">📞 ${inv.customer.mobile}</div>
+      <div class="small">🏙️ ${inv.customer.city}</div>
+      <div class="small">📍 ${inv.customer.address}</div>
+      <div style="margin-top:6px"><button id="unselectInv" class="btn ghost">إلغاء الاختيار</button></div>`;
+    document.getElementById('unselectInv').addEventListener('click', ()=> {
+      selectedInvoiceId = null; renderInvoices(); itemsArea.innerHTML=''; custBox.innerHTML = '<div class="small">لم يتم اختيار فاتورة</div>';
+    });
+
+    document.getElementById('invoiceMeta').innerHTML = `<strong>${inv.invoice_no}</strong> — عدد البنود: ${items.length}`;
+    renderItemsTable(items);
+    log(`تم تحميل الفاتورة ${inv.invoice_no}`);
+  }
+
+  // render items table with inputs for return qty and restock
+  function renderItemsTable(items){
+    let html = `<table>
+      <thead><tr><th>المنتج</th><th>مباع</th><th>كمية مرتجعة</th><th>إعادة تخزين؟</th><th>تفاصيل FIFO</th></tr></thead><tbody>`;
+    items.forEach(it=>{
+      // compute sum of allocations qty for info
+      const allocSum = allocations.filter(a=> a.sale_item_id===it.id).reduce((s,x)=> s + x.qty, 0);
+      html += `<tr>
+        <td style="text-align:right"><div style="font-weight:800">${it.product_name}</div><div class="small monos">ID:${it.product_id}</div></td>
+        <td>${it.qty} <div class="small">مخصم: ${allocSum}</div></td>
+        <td><input data-item="${it.id}" type="number" step="0.0001" min="0" class="ret-qty" style="width:100px" value="0"></td>
+        <td><select data-item="${it.id}" class="restock"><option value="1">نعم (إعادة للمخزن)</option><option value="0">لا</option></select></td>
+        <td><button class="btn ghost view-fifo" data-item="${it.id}">عرض FIFO</button></td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    itemsArea.innerHTML = html;
+
+    // attach handlers
+    document.querySelectorAll('.view-fifo').forEach(b=> b.addEventListener('click', (e)=> {
+      const id = Number(b.dataset.item);
+      openFifoForItem(id);
+    }));
+    document.querySelectorAll('.ret-qty').forEach(inp=> inp.addEventListener('input', recalcTotals));
+    document.querySelectorAll('.restock').forEach(sel=> sel.addEventListener('change', recalcTotals));
+    recalcTotals();
+  }
+
+  // recalc totals
+  function recalcTotals(){
+    let totalQty = 0; let totalVal = 0;
+    document.querySelectorAll('.ret-qty').forEach(inp=>{
+      const itemId = Number(inp.dataset.item);
+      const qty = parseFloat(inp.value || 0);
+      if (qty > 0) {
+        const it = invoiceItems.find(x=> x.id===itemId);
+        totalQty += qty;
+        totalVal += qty * (it ? it.selling_price : 0);
+      }
+    });
+    totalReturnQtyEl.textContent = totalQty.toFixed(4);
+    totalReturnValueEl.textContent = totalVal.toFixed(2);
+  }
+
+  // open FIFO preview for one sale item (simulate reverse allocation -> LIFO)
+  function openFifoForItem(saleItemId){
+    const it = invoiceItems.find(x=> x.id === saleItemId);
+    if (!it) { toast('البند غير موجود','error'); return; }
+    fifoTitle.textContent = `تفاصيل FIFO — ${it.product_name}`;
+    const qtyInput = document.querySelector(`.ret-qty[data-item="${saleItemId}"]`);
+    const qtyRequested = parseFloat(qtyInput ? (qtyInput.value || 0) : 0);
+
+    // gather allocations for this sale_item, order by id asc (older first); for reverse allocation we'll use reverse order
+    const allocs = allocations.filter(a=> a.sale_item_id === saleItemId).map(a => ({...a}));
+    if (!allocs.length) {
+      fifoContent.innerHTML = `<div class="small">لا توجد تخصيصات لهذا البند.</div>`;
+      fifoSubtitle.textContent = `المتبقي في المخزن لهذه المنتجات: ${batches.filter(b=> b.product_id===it.product_id).reduce((s,b)=> s + b.remaining, 0)} وحدة`;
+      fifoModal.style.display = 'flex';
+      return;
+    }
+
+    // Compute how return qty will map to allocations (LIFO: last allocations first)
+    // Show table: batch id | تاريخ | المتبقي الآن | سعر الشراء | مأخوذ (جزء من الارجاع) | تكلفة
+    let need = qtyRequested;
+    let rows = [];
+    // we'll iterate allocations from last to first
+    for (let i = allocs.length - 1; i >= 0 && need > 0; i--) {
+      const a = allocs[i];
+      const batch = batches.find(b=> b.id === a.batch_id);
+      const availAllocQty = a.qty; // how much was allocated originally
+      const take = Math.min(availAllocQty, need);
+      const beforeBatchRemaining = batch ? batch.remaining : 0;
+      const afterBatchRemaining = beforeBatchRemaining + take; // because return will add back if restock
+      rows.push({
+        batch_id: a.batch_id,
+        received_at: batch ? batch.received_at : '-',
+        before: beforeBatchRemaining,
+        unit_cost: a.unit_cost,
+        taken: take,
+        cost: take * a.unit_cost,
+        after: afterBatchRemaining
+      });
+      need -= take;
+    }
+
+    // render
+    let html = `<div class="small">الكمية المطلوبة للمرجع: <strong>${qtyRequested}</strong> — (نظام الإعادة هنا: يرجع إلى نفس الدُفعات المستخدمة — LIFO)</div>`;
+    html += `<table style="margin-top:10px"><thead><tr><th>رقم الدفعة</th><th>التاريخ</th><th>المتبقي الآن</th><th>سعر الشراء</th><th>مأخوذ</th><th>تكلفة</th><th>بعد الارجاع</th></tr></thead><tbody>`;
+    let totalCost = 0;
+    rows.forEach(r=>{
+      totalCost += r.cost;
+      html += `<tr>
+        <td class="monos">${r.batch_id}</td>
+        <td class="small monos">${r.received_at}</td>
+        <td>${r.before.toFixed(4)}</td>
+        <td class="monos">${r.unit_cost.toFixed(2)}</td>
+        <td>${r.taken.toFixed(4)}</td>
+        <td>${r.cost.toFixed(2)}</td>
+        <td>${r.after.toFixed(4)}</td>
+      </tr>`;
+    });
+    if (need > 0) {
+      html += `<tr><td colspan="7" style="color:${'rgb(185 28 28)'}">تحذير: الكمية المطلوبة أكبر من الكمية المباعة/المخصصة — لم يتم تغطية ${need.toFixed(4)} وحدة</td></tr>`;
+    }
+    html += `</tbody></table>`;
+    html += `<div style="margin-top:8px"><strong>إجمالي تكلفة المرتجع (تقديري):</strong> ${totalCost.toFixed(2)} ج</div>`;
+
+    fifoContent.innerHTML = html;
+    fifoSubtitle.textContent = `متبقي المخزن الحالي: ${batches.filter(b=> b.product_id===it.product_id).reduce((s,b)=> s + b.remaining, 0)} وحدة`;
+    fifoModal.style.display = 'flex';
+  }
+
+  document.getElementById('closeFifo').addEventListener('click', ()=> fifoModal.style.display='none');
+
+  // process returns: open confirm modal summarizing requested returns
+  document.getElementById('processBtn').addEventListener('click', ()=> {
+    if (!selectedInvoiceId) { toast('اختر فاتورة أولاً','error'); return; }
+    // collect requested items
+    const selected = [];
+    document.querySelectorAll('.ret-qty').forEach(inp=>{
+      const id = Number(inp.dataset.item);
+      const qty = parseFloat(inp.value || 0);
+      if (qty > 0) {
+        const restock = document.querySelector(`.restock[data-item="${id}"]`).value === '1';
+        const it = invoiceItems.find(x=> x.id===id);
+        selected.push({...it, qty_return:qty, restock});
+      }
+    });
+    if (!selected.length) { toast('لا توجد كميات مرجعة','error'); return; }
+
+    // build confirm body
+    let html = `<div>فاتورة: <strong>${invoices.find(i=> i.id===selectedInvoiceId).invoice_no}</strong></div>`;
+    html += `<div style="margin-top:8px"><table><thead><tr><th>المنتج</th><th>كمية مرجعة</th><th>إعادة للمخزن</th><th>قيمة</th></tr></thead><tbody>`;
+    let tot=0;
+    selected.forEach(s=>{
+      const val = s.qty_return * s.selling_price;
+      tot += val;
+      html += `<tr><td style="text-align:right">${s.product_name}</td><td>${s.qty_return}</td><td>${s.restock ? 'نعم' : 'لا'}</td><td>${val.toFixed(2)}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+    html += `<div style="margin-top:8px"><strong>إجمالي المرتجعات:</strong> ${tot.toFixed(2)} ج</div>`;
+    confirmBody.innerHTML = html;
+    confirmTotal.textContent = tot.toFixed(2);
+    confirmModal.style.display = 'flex';
+  });
+
+  // cancel confirm
+  document.getElementById('cancelConfirm').addEventListener('click', ()=> confirmModal.style.display='none');
+
+  // do confirm -> apply changes locally (simulate DB ops)
+  document.getElementById('doConfirm').addEventListener('click', ()=> {
+    // collect selected items like above
+    const selected = [];
+    document.querySelectorAll('.ret-qty').forEach(inp=>{
+      const id = Number(inp.dataset.item);
+      const qty = parseFloat(inp.value || 0);
+      if (qty > 0) {
+        const restock = document.querySelector(`.restock[data-item="${id}"]`).value === '1';
+        const it = invoiceItems.find(x=> x.id===id);
+        selected.push({...it, qty_return:qty, restock});
+      }
+    });
+
+    // For each selected, try to apply reverse allocation on allocations list (modify allocations and batches)
+    let error = null;
+    selected.forEach(s=>{
+      let need = s.qty_return;
+      // get allocations for sale_item ordered oldest->newest (we'll process reverse)
+      const allocs = allocations.filter(a=> a.sale_item_id === s.id);
+      // check total alloc qty available
+      const totalAlloc = allocs.reduce((sum,a)=> sum + a.qty, 0);
+      if (need > totalAlloc + 0.00001) {
+        error = `المرتجع للبند ${s.product_name} أكبر من المخصص (المتاح للإرجاع ${totalAlloc})`;
+        return;
+      }
+      // iterate allocations from last to first
+      for (let i = allocs.length - 1; i >= 0 && need > 0; i--) {
+        const a = allocs[i];
+        const take = Math.min(a.qty, need);
+        // reduce allocation qty
+        a.qty = +(a.qty - take).toFixed(4);
+        // update in global allocations
+        const idx = allocations.findIndex(x=> x.id === a.id);
+        if (idx >= 0) allocations[idx].qty = a.qty;
+        // if restock -> add to batch.remaining
+        if (s.restock) {
+          const bIdx = batches.findIndex(b=> b.id === a.batch_id);
+          if (bIdx >= 0) {
+            batches[bIdx].remaining = +(batches[bIdx].remaining + take).toFixed(4);
+            // if batch was consumed and now has remaining > 0, set active
+            if (batches[bIdx].status === 'consumed' && batches[bIdx].remaining > 0) batches[bIdx].status = 'active';
+          }
+        }
+        // log one allocation reversed
+        log(`مرجع: بند ${s.product_name} — أُعيد ${take} إلى الدفعة ${a.batch_id}${s.restock ? ' (أُعيد إلى المخزون)' : ' (لم يُعاد للمخزون)'}`);
+        need = +(need - take).toFixed(4);
+      }
+    });
+
+    if (error) { toast(error,'error'); confirmModal.style.display='none'; return; }
+    toast('تمت معالجة المرتجعات محلياً (محاكاة)', 'success');
+    confirmModal.style.display='none';
+    // refresh view
+    if (selectedInvoiceId) loadInvoice(selectedInvoiceId);
+    recalcTotals(); // totals based on inputs (could clear inputs if desired)
+  });
+
+  // printing simple preview
+  document.getElementById('printBtn').addEventListener('click', ()=> {
+    const printWindow = window.open('','_blank','width=800,height=600');
+    printWindow.document.write('<html dir="rtl"><head><meta charset="utf-8"><title>طباعة</title></head><body>');
+    printWindow.document.write('<h3>معاينة الطباعة (مرتجع)</h3>');
+    printWindow.document.write(document.getElementById('itemsArea').innerHTML);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.print();
+  });
+
+  // theme toggle
+  document.getElementById('themeBtn').addEventListener('click', ()=> {
+    const html = document.documentElement;
+    const cur = html.getAttribute('data-theme') || 'light';
+    html.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  });
+
+  // utility log
+  function log(msg){
+    const el = document.createElement('div');
+    el.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
+    logArea.prepend(el);
+  }
+
+  // initial render
+  renderInvoices();
+  // load first invoice by default for demo
+  setTimeout(()=> {
+    selectedInvoiceId = invoices[0].id;
+    renderInvoices();
+    loadInvoice(selectedInvoiceId);
+  }, 200);
+
+});
+</script>
+</body>
+</html>

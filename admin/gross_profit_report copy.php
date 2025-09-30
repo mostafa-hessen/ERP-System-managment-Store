@@ -1,6 +1,6 @@
 <?php
 // reports/profit_report_invoices_summary.responsive.php
-// نسخة محسّنة: إضافة زر 'تفاصيل' لكل بند لعرض sale_item_allocations ومصدر متوسط التكلفة
+// نسخة محسّنة: تصميم responsive وحديث، متطلبات الطباعة، فترات سريعة، رأس جدول ثابت.
 $page_title = "تقرير الربح - ملخص الفواتير";
 require_once dirname(__DIR__) . '/config.php';
 require_once BASE_DIR . 'partials/session_admin.php'; // صلاحيات المدير فقط
@@ -43,131 +43,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_invoice_items' && isset($
         $stmt->close();
     } else {
         echo json_encode(['ok'=>false,'msg'=>'فشل تحضير الاستعلام: '.$conn->error], JSON_UNESCAPED_UNICODE);
-    }
-    exit;
-}
-
-// === AJAX endpoint: جلب تخصيصات بند (sale_item_allocations) ===
-// if (isset($_GET['action']) && $_GET['action'] === 'get_item_allocations' && isset($_GET['id'])) {
-//     header('Content-Type: application/json; charset=utf-8');
-//     $sale_item_id = intval($_GET['id']);
-//     if ($sale_item_id <= 0) { echo json_encode(['ok'=>false,'msg'=>'معرف بند غير صالح']); exit; }
-
-//     $sql_alloc = "
-//         SELECT sia.qty, sia.unit_cost, sia.line_cost, sia.batch_id,
-//                COALESCE(b.batch_id, CONCAT('batch#',sia.batch_id)) AS batch_code,
-//                COALESCE(b.received_at, sia.created_at, '') AS received_at
-//         FROM sale_item_allocations sia
-//         LEFT JOIN batches b ON b.id = sia.batch_id
-//         WHERE sia.sale_item_id = ?
-//         ORDER BY COALESCE(b.received_at, sia.created_at) ASC, sia.id ASC
-//     ";
-
-//     if ($st = $conn->prepare($sql_alloc)) {
-//         $st->bind_param('i', $sale_item_id);
-//         if ($st->execute()) {
-//             $res = $st->get_result();
-//             $allocs = [];
-//             while ($a = $res->fetch_assoc()) {
-//                 $a['qty'] = floatval($a['qty']);
-//                 $a['unit_cost'] = floatval($a['unit_cost']);
-//                 $a['line_cost'] = floatval($a['line_cost']);
-//                 $allocs[] = $a;
-//             }
-//             echo json_encode(['ok'=>true,'allocations'=>$allocs], JSON_UNESCAPED_UNICODE);
-//         } else {
-//             echo json_encode(['ok'=>false,'msg'=>'فشل تنفيذ استعلام التخصيصات: '.$st->error], JSON_UNESCAPED_UNICODE);
-//         }
-//         $st->close();
-//     } else {
-//         echo json_encode(['ok'=>false,'msg'=>'فشل تحضير استعلام التخصيصات: '.$conn->error], JSON_UNESCAPED_UNICODE);
-//     }
-//     exit;
-// }
-
-// === AJAX endpoint: جلب تخصيصات بند (sale_item_allocations) ===
-if (isset($_GET['action']) && $_GET['action'] === 'get_item_allocations' && isset($_GET['id'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    $sale_item_id = intval($_GET['id']);
-    if ($sale_item_id <= 0) {
-        echo json_encode(['ok' => false, 'msg' => 'معرف بند غير صالح']);
-        exit;
-    }
-
-    // نتحقق سريعًا من وجود جدول batches وأعمدته المتوقعة لتفادي أخطاء SQL في بيئات مختلفة
-    $has_batches = false;
-    $has_batch_code = false;
-    $has_received_at = false;
-    $q = $conn->query("SHOW TABLES LIKE 'batches'");
-    if ($q && $q->num_rows > 0) {
-        $has_batches = true;
-        // تحقق من الأعمدة
-        $cols = $conn->query("SHOW COLUMNS FROM batches");
-        if ($cols) {
-            while ($col = $cols->fetch_assoc()) {
-                $cname = strtolower($col['Field']);
-                if ($cname === 'batch_code') $has_batch_code = true;
-                if ($cname === 'received_at' || $cname === 'received_date' || $cname === 'created_at') $has_received_at = true;
-            }
-            $cols->free();
-        }
-    }
-
-    // بناء الاستعلام بحسب ما هو متاح
-    if ($has_batches) {
-        // if batches exist, try to join and select batch_code/received_at when possible
-        $select_batch_code = $has_batch_code ? "COALESCE(b.batch_code, CONCAT('batch#',sia.batch_id)) AS batch_code" : "CONCAT('batch#',sia.batch_id) AS batch_code";
-        // for received_at prefer b.received_at if present otherwise sia.created_at
-        if ($has_received_at) {
-            // try to use b.received_at; if column name was different (e.g. created_at) SHOW COLUMNS caught it and set $has_received_at
-            $select_received = "COALESCE(b.received_at, sia.created_at) AS received_at";
-        } else {
-            $select_received = "sia.created_at AS received_at";
-        }
-
-        $sql_alloc = "
-            SELECT sia.qty, sia.unit_cost, sia.line_cost, sia.batch_id,
-                   {$select_batch_code},
-                   {$select_received}
-            FROM sale_item_allocations sia
-            LEFT JOIN batches b ON b.id = sia.batch_id
-            WHERE sia.sale_item_id = ?
-            ORDER BY COALESCE(" . ($has_received_at ? "b.received_at" : "sia.created_at") . ", sia.created_at) ASC, sia.id ASC
-        ";
-    } else {
-        // لا يوجد جدول batches: نعرض فقط ما في sale_item_allocations مع batch_id كـ batch_code بديل
-        $sql_alloc = "
-            SELECT sia.qty, sia.unit_cost, sia.line_cost, sia.batch_id,
-                   CONCAT('batch#',sia.batch_id) AS batch_code,
-                   sia.created_at AS received_at
-            FROM sale_item_allocations sia
-            WHERE sia.sale_item_id = ?
-            ORDER BY sia.created_at ASC, sia.id ASC
-        ";
-    }
-
-    if ($st = $conn->prepare($sql_alloc)) {
-        $st->bind_param('i', $sale_item_id);
-        if ($st->execute()) {
-            $res = $st->get_result();
-            $allocs = [];
-            while ($a = $res->fetch_assoc()) {
-                // ضمان نوعية القيم للأمام (JSON)
-                $a['qty'] = isset($a['qty']) ? floatval($a['qty']) : 0.0;
-                $a['unit_cost'] = isset($a['unit_cost']) ? floatval($a['unit_cost']) : 0.0;
-                $a['line_cost'] = isset($a['line_cost']) ? floatval($a['line_cost']) : 0.0;
-                // batch_code و received_at مفترضين كسلاسل
-                $a['batch_code'] = isset($a['batch_code']) ? (string)$a['batch_code'] : ('batch#' . ($a['batch_id'] ?? ''));
-                $a['received_at'] = isset($a['received_at']) ? (string)$a['received_at'] : '';
-                $allocs[] = $a;
-            }
-            echo json_encode(['ok' => true, 'allocations' => $allocs], JSON_UNESCAPED_UNICODE);
-        } else {
-            echo json_encode(['ok' => false, 'msg' => 'فشل تنفيذ استعلام التخصيصات: ' . $st->error], JSON_UNESCAPED_UNICODE);
-        }
-        $st->close();
-    } else {
-        echo json_encode(['ok' => false, 'msg' => 'فشل تحضير استعلام التخصيصات: ' . $conn->error], JSON_UNESCAPED_UNICODE);
     }
     exit;
 }
@@ -302,18 +177,22 @@ require_once BASE_DIR . 'partials/sidebar.php';
   --shadow-2: 0 12px 28px rgba(11,132,255,0.14);
 }
 
+/* container and header */
 .container { max-width:1100px; margin:0 auto; padding:18px; }
 .page-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
 .page-header h3 { margin:0; font-size:1.25rem; color:var(--text); }
 .small-muted { color:var(--text-soft); }
 
+/* filters */
 .card.filter-card { background:var(--surface); border-radius:12px; padding:12px; margin-bottom:16px; box-shadow:var(--shadow-1); }
 .form-row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
 
+/* quick periods buttons */
 .periods { display:flex; gap:8px; align-items:center; margin-right:8px; }
 .periods button { background:transparent; border:1px solid var(--border); padding:8px 10px; border-radius:8px; cursor:pointer; color:var(--text); }
 .periods button.active { background:var(--primary); color:#fff; box-shadow:var(--shadow-2); transform:translateY(-2px); }
 
+/* summary cards */
 .summary-cards { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:20px; }
 .summary-card {
   background: var(--surface);
@@ -334,22 +213,31 @@ require_once BASE_DIR . 'partials/sidebar.php';
 .card-profit::before { background:var(--grad-3); }
 .currency-badge { display:inline-block; margin-left:8px; font-weight:700; color:var(--muted); font-size:0.85rem; }
 
+/* table with sticky header and scrollable body */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* profit badge */
 .badge-profit { font-weight:700; padding:6px 8px; border-radius:6px; display:inline-block; }
 .badge-profit.positive { background:rgba(16,185,129,0.08); color:#075928; border:1px solid rgba(16,185,129,0.12); }
 .badge-profit.negative { background:rgba(239,68,68,0.06); color:#7f1d1d; border:1px solid rgba(239,68,68,0.12); }
 
+/* modal lite */
 .modal-backdrop-lite { position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(2,6,23,0.5); display:none; align-items:center; justify-content:center; z-index:9999; padding:16px; }
 .modal-card { background:var(--surface); border-radius:12px; max-width:980px; width:100%; max-height:85vh; overflow:auto; padding:18px; box-shadow:var(--shadow-2); }
 
-.alloc-modal-backdrop { position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(2,6,23,0.5); display:none; align-items:center; justify-content:center; z-index:10000; padding:16px; }
-
-.table-compact th, .table-compact td{padding:8px 10px;border-bottom:1px solid #eef3fb}
-.text-end{ text-align:right }
-.center{text-align:center}
-.btn{display:inline-block;padding:6px 10px;border-radius:8px;border:1px solid rgba(2,6,23,0.06);cursor:pointer;background:#fff}
-.btn-sm{padding:4px 8px;font-size:13px}
-.btn-outline-primary{border-color:#0b84ff;color:#0b84ff;background:transparent}
-
+/* responsive */
 @media (max-width:900px) { .summary-cards { grid-template-columns: repeat(2, 1fr); } .table { min-width: 700px; } }
 @media (max-width:640px) { .summary-cards { grid-template-columns: 1fr; } .page-header { flex-direction:column; align-items:flex-start; gap:6px; } .table { min-width: 600px; } }
 </style>
@@ -428,7 +316,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
             <div class="alert alert-info">لا توجد فواتير مسلّمة خلال الفترة المحددة.</div>
         <?php else: ?>
             <div class="table-wrapper mb-3">
-                <div class="custom-table-wrapper">
+                <div class=" custom-table-wrapper">
                     <table class="custom-table mb-0" id="reportTable">
                         <thead class="center">
                             <tr>
@@ -454,6 +342,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                                     <td class="text-end"><span class="badge-profit <?php echo $profit_class; ?>"><?php echo number_format($s['profit'],2); ?> ج.م</span></td>
                                     <td class="text-center">
                                         <button type="button" class="btn btn-sm btn-outline-primary details-btn" data-invoice-id="<?php echo intval($s['invoice_id']); ?>">عرض</button>
+                                        <!-- <a href="<?php echo BASE_URL; ?>invoices_out/view_invoice_detaiels.php?id=<?php echo intval($s['invoice_id']); ?>" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">فتح الصفحة</a> -->
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -484,7 +373,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
                     <li>الإيرادات = مجموع أسعار البيع كما سُجلت في بنود الفاتورة.</li>
                     <li>تكلفة البضاعة = مجموع (الكمية × سعر التكلفة المسجل بنفس بند الفاتورة).</li>
                     <li>الربح = الإيرادات − التكلفة. ونسبة الربح = (الربح ÷ الإيرادات) × 100.</li>
-                    <li>اضغط "عرض" لأي فاتورة لعرض بنودها داخل النافذة، ثم اضغط زر \"تفاصيل\" داخل أي بند لعرض تخصيصات الباتشات والشرح التفصيلي لمصدر المتوسط.</li>
+                    <li>اضغط "عرض" لأي فاتورة لعرض بنودها داخل النافذة، أو "فتح الصفحة" لفتح صفحة الفاتورة كاملة.</li>
                 </ul>
             </div>
         </div>
@@ -492,7 +381,7 @@ require_once BASE_DIR . 'partials/sidebar.php';
 
 </div>
 
-<!-- Modal (فاتورة) -->
+<!-- Modal (خفيف) -->
 <div id="modalBackdrop" class="modal-backdrop-lite" role="dialog" aria-hidden="true">
     <div class="modal-card" role="document" aria-modal="true">
         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -509,48 +398,6 @@ require_once BASE_DIR . 'partials/sidebar.php';
     </div>
 </div>
 
-<!-- Modal (تخصيصات البند) -->
-<div id="allocModalBackdrop" class="alloc-modal-backdrop" role="dialog" aria-hidden="true">
-  <div class="modal-card" role="document" aria-modal="true">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <h5 id="allocModalTitle">تفاصيل تخصيصات: <span id="allocProductTitle"></span></h5>
-      <div>
-        <button id="closeAllocModal" class="btn btn-sm btn-light">✖ إغلاق</button>
-      </div>
-    </div>
-    <div id="allocModalBody">
-      <div class="small-muted" id="allocSummary"></div>
-      <div style="margin-top:12px;overflow:auto" class="custom-table-wrapper">
-        <table class="custom-table mb-0" id="allocTable">
-          <thead class="center">
-            <tr>
-              <th>باتش / دفعة</th>
-              <th style="width:120px">تاريخ الاستلام</th>
-              <th style="width:120px" class="text-end">الكمية</th>
-              <th style="width:120px" class="text-end">سعر الشراء</th>
-              <th style="width:140px" class="text-end">إجمالي تكلفة</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-          <tfoot>
-            <tr>
-              <td colspan="2" class="text-end">المجموع</td>
-              <td id="allocTotalQty" class="text-end">0.00</td>
-              <td></td>
-              <td id="allocTotalCost" class="text-end">0.00</td>
-            </tr>
-            <tr>
-              <td colspan="4" class="text-end">متوسط التكلفة لكل وحدة</td>
-              <td id="allocAvg" class="text-end">0.00</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      <div id="allocCalcSteps" style="margin-top:12px"></div>
-    </div>
-  </div>
-</div>
-
 <script>
 document.addEventListener('DOMContentLoaded', function(){
     // helpers
@@ -558,7 +405,7 @@ document.addEventListener('DOMContentLoaded', function(){
     function qsa(s){ return Array.from(document.querySelectorAll(s)); }
     function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replace(/[&<>"']/g,function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; }); }
 
-    // period buttons behavior (same as قبل)
+    // period buttons behavior
     const btnDay = qs('#btnDay'), btnWeek = qs('#btnWeek'), btnMonth = qs('#btnMonth'), btnCustom = qs('#btnCustom');
     const startIn = qs('#start_date'), endIn = qs('#end_date'), periodInput = qs('#periodInput'), filterForm = qs('#filterForm');
     const todayQuick = qs('#todayQuick');
@@ -595,6 +442,7 @@ document.addEventListener('DOMContentLoaded', function(){
         if (autoSubmit) { setTimeout(()=> filterForm.submit(), 120); }
     }
 
+    // initial: if user provided period via GET, respect it; else default day
     const initialPeriod = '<?php echo e($_GET['period'] ?? 'day'); ?>';
     setPeriod(initialPeriod || 'day', false);
 
@@ -602,9 +450,10 @@ document.addEventListener('DOMContentLoaded', function(){
     btnWeek?.addEventListener('click', ()=> setPeriod('week', true));
     btnMonth?.addEventListener('click', ()=> setPeriod('month', true));
     btnCustom?.addEventListener('click', ()=> setPeriod('custom', false));
+
     todayQuick?.addEventListener('click', function(){ setPeriod('day', true); });
 
-    // modal فاتورة
+    // modal behavior (details)
     const modal = qs('#modalBackdrop');
     const modalTitle = qs('#modalTitle');
     const modalContent = qs('#modalContent');
@@ -627,8 +476,8 @@ document.addEventListener('DOMContentLoaded', function(){
                 modalContent.innerHTML = '<div class="p-2">لا توجد بنود في هذه الفاتورة.</div>';
                 return;
             }
-            // Build table with Details button per item
-            let html = '<div class="table-responsive custom-table-wrapper"><table class="custom-table mb-0"><thead class="center"><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:110px">سعر التكلفة</th><th style="width:110px">إجمالي التكلفة</th><th style="width:110px">سعر البيع</th><th style="width:110px">إجمالي البيع</th><th style="width:110px">صافي الربح</th><th style="width:120px">تفاصيل</th></tr></thead><tbody>';
+            // Build table
+            let html = '<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr><th>المنتج</th><th style="width:90px">الكمية</th><th style="width:110px">سعر التكلفة</th><th style="width:110px">إجمالي التكلفة</th><th style="width:110px">سعر البيع</th><th style="width:110px">إجمالي البيع</th><th style="width:110px">صافي الربح</th></tr></thead><tbody>';
             let sumSell = 0, sumCost = 0, sumProfit = 0;
             for (const it of items) {
                 const qty = parseFloat(it.quantity || 0);
@@ -638,33 +487,23 @@ document.addEventListener('DOMContentLoaded', function(){
                 const lineCogs = +(qty * costu);
                 const lineProfit = +(total - lineCogs);
                 sumSell += total; sumCost += lineCogs; sumProfit += lineProfit;
-                // include a details button that passes sale_item_id (it.id)
                 html += `<tr>
                     <td>${escapeHtml(it.product_name || ('#'+it.product_id))}</td>
                     <td class="text-end">${qty.toFixed(2)}</td>
+                
                     <td class="text-end">${costu.toFixed(2)}</td>
                     <td class="text-end">${lineCogs.toFixed(2)}</td>
-                    <td class="text-end">${selling.toFixed(2)}</td>
+                        <td class="text-end">${selling.toFixed(2)}</td>
                     <td class="text-end">${total.toFixed(2)}</td>
                     <td class="text-end">${lineProfit.toFixed(2)}</td>
-                    <td class="text-center"><button class="btn btn-sm btn-outline-primary alloc-btn" data-sale-item-id="${it.id}" data-product-name="${escapeHtml(it.product_name || '')}">تفاصيل</button></td>
                 </tr>`;
             }
-            html += `</tbody><tfoot class="table-"><tr>
-                <th>المجموع</th><th></th><th></th><th class="text-end">${sumCost.toFixed(2)}</th>
-                <th></th><th class="text-end">${sumSell.toFixed(2)}</th><th class="text-end">${sumProfit.toFixed(2)}</th><th></th>
+            html += `</tbody><tfoot class="table-light"><tr>
+                <th>المجموع</th><th></th><th>
+                </th><th class="text-end">${sumCost.toFixed(2)}</th>
+                <th></th><th class="text-end">${sumSell.toFixed(2)}</th><th class="text-end">${sumProfit.toFixed(2)}</th>
             </tr></tfoot></table></div>`;
             modalContent.innerHTML = html;
-
-            // bind alloc buttons
-            Array.from(document.querySelectorAll('.alloc-btn')).forEach(b=>{
-                b.addEventListener('click', function(){
-                    const saleItemId = this.dataset.saleItemId;
-                    const productName = this.dataset.productName || '';
-                    openAllocModal(saleItemId, productName);
-                });
-            });
-
         } catch (err) {
             console.error(err);
             modalContent.innerHTML = '<div class="alert alert-danger">خطأ في الاتصال بالخادم.</div>';
@@ -692,70 +531,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
     closeModal.addEventListener('click', closeModalFn);
     modal.addEventListener('click', function(e){ if (e.target === modal) closeModalFn(); });
-
-    // ==== allocations modal functions ====
-    const allocModal = qs('#allocModalBackdrop');
-    const allocTableBody = qs('#allocTable tbody');
-    const allocSummary = qs('#allocSummary');
-    const allocTotalQty = qs('#allocTotalQty');
-    const allocTotalCost = qs('#allocTotalCost');
-    const allocAvg = qs('#allocAvg');
-    const allocCalcSteps = qs('#allocCalcSteps');
-    const allocProductTitle = qs('#allocProductTitle');
-    const closeAllocModal = qs('#closeAllocModal');
-
-    async function fetchAllocations(saleItemId){
-        try {
-            const params = new URLSearchParams({ action: 'get_item_allocations', id: saleItemId });
-            const res = await fetch(location.pathname + '?' + params.toString(), { credentials: 'same-origin' });
-            const data = await res.json();
-            if (!data.ok) { alert('خطأ: ' + (data.msg||'فشل جلب التخصيصات')); return null; }
-            return data.allocations || [];
-        } catch (err) { console.error(err); alert('خطأ في الاتصال'); return null; }
-    }
-
-    async function openAllocModal(saleItemId, productName){
-        allocTableBody.innerHTML = '';
-        allocSummary.textContent = 'جارٍ التحميل...';
-        allocCalcSteps.innerHTML = '';
-        allocProductTitle.textContent = productName ? `${productName} (#${saleItemId})` : `#${saleItemId}`;
-        allocModal.style.display = 'flex'; allocModal.setAttribute('aria-hidden','false');
-
-        const allocs = await fetchAllocations(saleItemId);
-        if (!allocs) {
-            allocSummary.textContent = 'حدث خطأ أثناء جلب التخصيصات.'; return;
-        }
-        if (!allocs.length) {
-            allocSummary.textContent = 'لا توجد تخصيصات مسجلة لهذا البند.'; return;
-        }
-        // build rows
-        let totalQty = 0, totalCost = 0;
-        let steps = [];
-        allocs.forEach(a=>{
-            const qty = parseFloat(a.qty || 0);
-            const unit = parseFloat(a.unit_cost || 0);
-            const line = parseFloat(a.line_cost || (qty * unit) || 0);
-            totalQty += qty; totalCost += line;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${escapeHtml(a.batch_code||a.batch_id||'')}</td><td>${escapeHtml(a.received_at||'')}</td><td class="text-end">${qty.toFixed(2)}</td><td class="text-end">${unit.toFixed(2)}</td><td class="text-end">${line.toFixed(2)}</td>`;
-            allocTableBody.appendChild(tr);
-            steps.push(`${qty.toFixed(2)} × ${unit.toFixed(2)} = ${line.toFixed(2)}`);
-        });
-        allocTotalQty.textContent = totalQty.toFixed(2);
-        allocTotalCost.textContent = totalCost.toFixed(2);
-        allocAvg.textContent = (totalQty ? (totalCost / totalQty).toFixed(2) : '0.00');
-
-        // show steps
-        allocSummary.textContent = `إجمالي كمية: ${Number(totalQty).toLocaleString('ar-EG',{minimumFractionDigits:2})} — إجمالي تكلفة: ${Number(totalCost).toLocaleString('ar-EG',{minimumFractionDigits:2})}`;
-        const ol = document.createElement('ol'); ol.style.paddingLeft = '18px';
-        steps.forEach(s=>{ const li=document.createElement('li'); li.textContent = s; ol.appendChild(li); });
-        const avgLine = document.createElement('div'); avgLine.style.marginTop='8px'; avgLine.style.fontWeight='800';
-        avgLine.textContent = `المتوسط = (Σ الأجزاء) ÷ Σ الكميات = (${totalCost.toFixed(2)}) ÷ ${totalQty.toFixed(2)} = ${(totalQty? (totalCost/totalQty).toFixed(2) : '0.00')}`;
-        allocCalcSteps.appendChild(ol); allocCalcSteps.appendChild(avgLine);
-    }
-
-    closeAllocModal.addEventListener('click', ()=>{ allocModal.style.display='none'; allocModal.setAttribute('aria-hidden','true'); allocTableBody.innerHTML=''; allocCalcSteps.innerHTML=''; });
-    allocModal.addEventListener('click', function(e){ if (e.target === allocModal) { allocModal.style.display='none'; allocModal.setAttribute('aria-hidden','true'); allocTableBody.innerHTML=''; allocCalcSteps.innerHTML=''; } });
 
     // PRINT: only print period + table + totals
     qs('#printBtn')?.addEventListener('click', function(){

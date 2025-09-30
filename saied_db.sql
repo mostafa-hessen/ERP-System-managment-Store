@@ -150,17 +150,7 @@ INSERT INTO `customers` (`id`, `name`, `mobile`, `city`, `address`, `notes`, `cr
 -- Table structure for table `expenses`
 --
 
-CREATE TABLE `expenses` (
-  `id` int(11) NOT NULL,
-  `expense_date` date NOT NULL COMMENT 'تاريخ حدوث المصروف',
-  `description` varchar(255) NOT NULL COMMENT 'وصف أو بيان المصروف',
-  `amount` decimal(10,2) NOT NULL COMMENT 'قيمة المصروف',
-  `category_id` int(11) DEFAULT NULL COMMENT 'معرف فئة المصروف (FK to expense_categories.id)',
-  `notes` text DEFAULT NULL COMMENT 'ملاحظات إضافية على المصروف (اختياري)',
-  `created_by` int(11) DEFAULT NULL COMMENT 'معرف المستخدم الذي سجل المصروف (FK to users.id)',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='سجل المصاريف التشغيلية';
+
 
 --
 -- Dumping data for table `expenses`
@@ -895,17 +885,6 @@ INSERT INTO `purchase_invoice_items` (`id`, `batch_id`, `purchase_invoice_id`, `
 -- Table structure for table `sale_item_allocations`
 --
 
-CREATE TABLE `sale_item_allocations` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `sale_item_id` int(11) NOT NULL,
-  `batch_id` bigint(20) UNSIGNED NOT NULL,
-  `qty` decimal(13,4) NOT NULL DEFAULT 0.0000,
-  `unit_cost` decimal(13,4) NOT NULL DEFAULT 0.0000,
-  `line_cost` decimal(18,4) NOT NULL DEFAULT 0.0000,
-  `created_by` int(11) DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
-) ;
 
 -- --------------------------------------------------------
 
